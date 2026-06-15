@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent Loop · 数据流与源码可视化</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0b0e1a;color:#e0e6f0;font-family:'Inter','SF Pro','PingFang SC','Microsoft YaHei',sans-serif;padding:30px 20px;min-height:100vh}
+.container{max-width:1100px;margin:0 auto}
+
+h1{font-size:20px;font-weight:700;background:linear-gradient(90deg,#60a5fa,#a78bfa);-webkit-background-clip:text;-webkit-text-fill-color:transparent;text-align:center;margin-bottom:2px}
+.sub{font-size:12px;color:#5a6380;text-align:center;margin-bottom:28px}
+.sub code{color:#60a5fa;font-size:11px}
+
+/* ═══════ Flow Diagram ═══════ */
+.flow{position:relative;display:flex;flex-direction:column;align-items:center;margin:0 auto 30px;max-width:800px}
+
+/* Nodes */
+.fnode{position:relative;width:100%;border-radius:10px;padding:14px 20px;cursor:pointer;transition:all .3s;border:1px solid transparent;user-select:none}
+.fnode:hover{transform:translateY(-2px);filter:brightness(1.15)}
+.fnode.active{border-color:#60a5fa;box-shadow:0 0 20px rgba(96,165,250,0.15)}
+
+.fnode .fn-title{font-size:14px;font-weight:700;display:flex;align-items:center;gap:8px}
+.fnode .fn-title .step-badge{display:inline-block;font-size:9px;font-weight:700;padding:1px 7px;border-radius:3px;letter-spacing:0.5px}
+.fnode .fn-desc{font-size:11px;margin-top:3px;opacity:.6;line-height:1.4}
+.fnode .fn-arrow{position:absolute;font-size:10px;opacity:.3;letter-spacing:1px}
+
+/* Node colors */
+.n-entry{background:linear-gradient(135deg,rgba(96,165,250,0.08),rgba(96,165,250,0.02));border-color:rgba(96,165,250,0.12)}
+.n-entry .step-badge{background:rgba(96,165,250,0.15);color:#93c5fd}
+.n-think{background:linear-gradient(135deg,rgba(168,85,247,0.08),rgba(168,85,247,0.02));border-color:rgba(168,85,247,0.12)}
+.n-think .step-badge{background:rgba(168,85,247,0.15);color:#c084fc}
+.n-act{background:linear-gradient(135deg,rgba(251,146,60,0.08),rgba(251,146,60,0.02));border-color:rgba(251,146,60,0.12)}
+.n-act .step-badge{background:rgba(251,146,60,0.15);color:#fb923c}
+.n-observe{background:linear-gradient(135deg,rgba(52,211,153,0.08),rgba(52,211,153,0.02));border-color:rgba(52,211,153,0.12)}
+.n-observe .step-badge{background:rgba(52,211,153,0.15);color:#34d399}
+.n-verify{background:linear-gradient(135deg,rgba(251,191,36,0.08),rgba(251,191,36,0.02));border-color:rgba(251,191,36,0.12)}
+.n-verify .step-badge{background:rgba(251,191,36,0.15);color:#fbbf24}
+.n-final{background:linear-gradient(135deg,rgba(14,165,233,0.08),rgba(14,165,233,0.02));border-color:rgba(14,165,233,0.12)}
+.n-final .step-badge{background:rgba(14,165,233,0.15);color:#38bdf8}
+
+/* Connector arrows */
+.conn{display:flex;justify-content:center;align-items:center;height:32px;position:relative;width:100%;cursor:pointer;transition:all .2s}
+.conn:hover{opacity:.8}
+.conn .cl{position:absolute;width:2px;height:100%;background:linear-gradient(to bottom,rgba(96,165,250,0.15),rgba(96,165,250,0.05));transition:all .3s}
+.conn.active .cl{background:linear-gradient(to bottom,#60a5fa,#38bdf8);width:3px}
+.conn .ca{position:absolute;bottom:2px;color:rgba(96,165,250,0.2);font-size:10px;transition:all .3s}
+.conn.active .ca{color:#60a5fa}
+.conn .clabel{position:absolute;right:20px;font-size:8px;color:#2a3050;letter-spacing:0.5px;transition:all .3s}
+.conn.active .clabel{color:#60a5fa;opacity:.6}
+
+/* ═══════ Shutter Panel (百叶窗) ═══════ */
+.shutter{overflow:hidden;max-height:0;transition:max-height .5s cubic-bezier(0.4,0,0.2,1),opacity .3s;opacity:0;width:100%;margin:0 auto 0}
+.shutter.open{max-height:500px;opacity:1}
+.shutter-inner{background:#111827;border:1px solid #1a1f35;border-radius:8px;padding:16px 18px;margin:2px 0 12px}
+
+.shutter-inner .si-label{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.shutter-inner .si-label span{font-size:10px;font-weight:700;color:#5a6380;letter-spacing:0.5px;text-transform:uppercase}
+.shutter-inner .si-label .si-file{font-size:9px;color:#2a3050;font-family:monospace}
+
+.shutter-inner pre{background:#0b0e1a;border-radius:5px;padding:12px;font-size:11px;font-family:'JetBrains Mono','Fira Code','SF Mono',monospace;line-height:1.6;overflow-x:auto;color:#8892b0;tab-size:2}
+.shutter-inner pre .kw{color:#c084fc}
+.shutter-inner pre .str{color:#34d399}
+.shutter-inner pre .cm{color:#5a6380;font-style:italic}
+.shutter-inner pre .fn{color:#60a5fa}
+.shutter-inner pre .num{color:#fbbf24}
+.shutter-inner pre .hl{background:rgba(96,165,250,0.08);display:inline-block;width:100%}
+
+/* ═══════ Legend ═══════ */
+.legend{display:flex;justify-content:center;gap:14px;flex-wrap:wrap;margin:18px 0 10px}
+.legend-item{display:flex;align-items:center;gap:4px;font-size:10px;color:#5a6380;cursor:pointer;padding:2px 6px;border-radius:4px;transition:all .2s}
+.legend-item:hover{background:rgba(255,255,255,0.03)}
+.legend-dot{width:10px;height:10px;border-radius:3px}
+
+/* ═══════ Summary ═══════ */
+.summary-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;margin:20px 0}
+.scard{background:#1a1f35;border-radius:6px;padding:10px 14px;border:1px solid #2a3050;text-align:center}
+.scard .sc-num{font-size:20px;font-weight:700}
+.scard .sc-label{font-size:10px;color:#5a6380;margin-top:2px}
+
+/* ═══════ Scrollbar ═══════ */
+::-webkit-scrollbar{width:3px;height:3px}
+::-webkit-scrollbar-track{background:#0b0e1a}
+::-webkit-scrollbar-thumb{background:#2a3050;border-radius:2px}
+
+/* ═══════ Responsive ═══════ */
+@media(max-width:768px){
+  body{padding:12px}
+  .fnode{padding:10px 14px}
+  .fnode .fn-title{font-size:12px}
+  .fnode .fn-desc{font-size:10px}
+  .shutter-inner pre{font-size:9px;padding:8px}
+}
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>Agent Loop · 数据流与源码映射</h1>
+<div class="sub">点击节点查看对应源码 · 点击连线查看数据流 · <code>agent-loop.py</code> + <code>README.md</code></div>
+
+<!-- Legend -->
+<div class="legend">
+  <span class="legend-item" onclick="focusNode('entry')"><span class="legend-dot" style="background:#93c5fd"></span>入口</span>
+  <span class="legend-item" onclick="focusNode('think')"><span class="legend-dot" style="background:#c084fc"></span>Think</span>
+  <span class="legend-item" onclick="focusNode('act')"><span class="legend-dot" style="background:#fb923c"></span>Act</span>
+  <span class="legend-item" onclick="focusNode('observe')"><span class="legend-dot" style="background:#34d399"></span>Observe</span>
+  <span class="legend-item" onclick="focusNode('verify')"><span class="legend-dot" style="background:#fbbf24"></span>Verify</span>
+  <span class="legend-item" onclick="focusNode('final')"><span class="legend-dot" style="background:#38bdf8"></span>输出</span>
+</div>
+
+<!-- ═══════ Flow Diagram ═══════ -->
+<div class="flow">
+
+  <!-- Node: Entry -->
+  <div class="fnode n-entry" id="n-entry" onclick="toggleShutter('entry')">
+    <div class="fn-title">
+      <span class="step-badge">ENTRY</span>
+      🚪 main() — 入口
+    </div>
+    <div class="fn-desc">CLI 参数解析 → 环境变量加载 → Agent 构建 → 任务输入</div>
+  </div>
+
+  <!-- Connector -->
+  <div class="conn" id="c-task" onclick="toggleShutter('c-task')" title="用户任务字符串传入 Agent.run()">
+    <div class="cl"></div>
+    <div class="ca">▾</div>
+    <div class="clabel">task → Agent.run()</div>
+  </div>
+
+  <!-- Node: Think -->
+  <div class="fnode n-think" id="n-think" onclick="toggleShutter('think')">
+    <div class="fn-title">
+      <span class="step-badge">THINK</span>
+      🤔 LLM 决定下一步
+    </div>
+    <div class="fn-desc">将当前上下文（system + 历史）发给 LLM → 返回 工具调用 或 直接答案</div>
+  </div>
+
+  <!-- Branch: tool call vs answer -->
+  <div style="display:flex;width:100%;gap:0;position:relative;margin:0">
+    <div style="flex:1;text-align:center;position:relative">
+      <div class="conn" id="c-tool" onclick="toggleShutter('c-tool')" style="width:80%;margin:0 auto">
+        <div class="cl"></div>
+        <div class="ca">▾</div>
+        <div class="clabel" style="right:auto;left:calc(50% + 10px);font-size:7px">有 tool_calls?</div>
+      </div>
+    </div>
+    <div style="flex:1;text-align:center;position:relative">
+      <div class="conn" id="c-answer" onclick="toggleShutter('c-answer')" style="width:80%;margin:0 auto">
+        <div class="cl"></div>
+        <div class="ca">▾</div>
+        <div class="clabel" style="right:auto;left:calc(50% + 10px);font-size:7px">直接输出</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Two paths: Act + Verify side by side conceptually, but actually sequential -->
+  <!-- Act -->
+  <div class="fnode n-act" id="n-act" onclick="toggleShutter('act')" style="margin-top:-8px">
+    <div class="fn-title">
+      <span class="step-badge">ACT</span>
+      🛠 执行工具
+    </div>
+    <div class="fn-desc">遍历 tool_calls → 查找 ToolBase → 调用 execute() → 捕获结果</div>
+  </div>
+
+  <div class="conn" id="c-result" onclick="toggleShutter('c-result')">
+    <div class="cl"></div>
+    <div class="ca">▾</div>
+    <div class="clabel">tool 结果注入 messages</div>
+  </div>
+
+  <!-- Observe -->
+  <div class="fnode n-observe" id="n-observe" onclick="toggleShutter('observe')">
+    <div class="fn-title">
+      <span class="step-badge">OBSERVE</span>
+      👀 观察结果
+    </div>
+    <div class="fn-desc">tool 结果以 role:tool 追加到 messages → LLM 在下轮看到结果</div>
+  </div>
+
+  <div class="conn" id="c-loopback" onclick="toggleShutter('c-loopback')">
+    <div class="cl"></div>
+    <div class="ca">▾</div>
+    <div class="clabel" style="right:30px">回到 Think（循环）</div>
+  </div>
+
+  <div style="text-align:center;font-size:9px;color:#2a3050;letter-spacing:2px;margin:-4px 0 2px">⬆ 循环直到 LLM 直接输出答案 ⬆</div>
+
+  <!-- Verify (only when direct answer) -->
+  <div class="fnode n-verify" id="n-verify" onclick="toggleShutter('verify')">
+    <div class="fn-title">
+      <span class="step-badge">VERIFY</span>
+      🔍 输出验证
+    </div>
+    <div class="fn-desc">Verifier 检查：最小长度 · 实质内容 → fail 则注入反馈重试</div>
+  </div>
+
+  <div class="conn" id="c-verify-result" onclick="toggleShutter('c-verify-result')">
+    <div class="cl"></div>
+    <div class="ca">▾</div>
+    <div class="clabel">pass / fail</div>
+  </div>
+
+  <!-- Final -->
+  <div class="fnode n-final" id="n-final" onclick="toggleShutter('final')">
+    <div class="fn-title">
+      <span class="step-badge">DONE</span>
+      ✅ 最终输出
+    </div>
+    <div class="fn-desc">返回结果 + 状态持久化 + 控制台输出</div>
+  </div>
+
+</div>
+
+<!-- ═══════ Shutter Panels ═══════ -->
+<div id="shutters">
+
+<!-- Entry -->
+<div class="shutter" id="s-entry">
+<div class="shutter-inner">
+<div class="si-label"><span>📄 agent-loop.py — main() 入口</span><span class="si-file">L659-776</span></div>
+<pre><span class="cm"># CLI 参数解析、环境变量加载、Agent 构建</span>
+<span class="kw">def</span> <span class="fn">main</span>():
+    parser = argparse.ArgumentParser()
+    <span class="cm"># --model / --api-key / --base-url / --system</span>
+    <span class="cm"># --checkpoint / --max-iter / --max-duration / --quiet</span>
+
+    config = <span class="fn">LLMConfig</span>(               <span class="cm">← 配置聚合</span>
+        api_key=args.api_key <span class="kw">or</span> LLMConfig.api_key,
+        model=args.model <span class="kw">or</span> <span class="str">"deepseek-v4-flash"</span>,
+    )
+
+    budget = <span class="fn">Budget</span>(                    <span class="cm">← 三重上限</span>
+        max_iterations=args.max_iter <span class="kw">or</span> <span class="num">25</span>,
+        max_duration=args.max_duration <span class="kw">or</span> <span class="num">600</span>,
+    )
+
+    agent = <span class="fn">Agent</span>(llm, tools,             <span class="cm">← 注入依赖</span>
+        system_prompt=system,
+        verifier=verifier,
+        budget=budget,
+    )
+    result = agent.run(task, verbose, checkpoint)</pre>
+</div>
+</div>
+
+<!-- Connector: task → Agent.run -->
+<div class="shutter" id="s-c-task">
+<div class="shutter-inner">
+<div class="si-label"><span>🔀 数据流：用户任务传入循环</span><span class="si-file">L376-390</span></div>
+<pre><span class="cm"># Agent.run() 接收 task，构建初始消息</span>
+<span class="kw">def</span> <span class="fn">run</span>(self, task: str, verbose=<span class="kw">True</span>,
+        checkpoint: <span class="kw">str</span> = <span class="str">""</span>) -> <span class="kw">str</span>:
+    self.messages = []
+    self.history = []
+
+    self.state = <span class="fn">LoopState</span>(                <span class="cm">← 初始化状态</span>
+        task_id=hashlib.md5(task.encode()).hexdigest()[:<span class="num">12</span>],
+    )
+
+    <span class="kw">if</span> self.system_prompt:
+        self.messages.append({                   <span class="cm">← 注入 system prompt</span>
+            <span class="str">"role"</span>: <span class="str">"system"</span>,
+            <span class="str">"content"</span>: self.system_prompt,
+        })
+    self.messages.append({                       <span class="cm">← 注入用户任务</span>
+        <span class="str">"role"</span>: <span class="str">"user"</span>,
+        <span class="str">"content"</span>: task,
+    })</pre>
+</div>
+</div>
+
+<!-- Think -->
+<div class="shutter" id="s-think">
+<div class="shutter-inner">
+<div class="si-label"><span>🧠 Think — LLM 推理决策</span><span class="si-file">L392-416</span></div>
+<pre><span class="cm"># 每轮迭代：LLM 决定是输出答案还是调用工具</span>
+<span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="num">1</span>, self.budget.max_iterations + <span class="num">1</span>):
+    self.state.iteration = i
+
+    <span class="cm"># 预算检查（提前终止）</span>
+    <span class="kw">if</span> self.budget.expired:
+        self.state.status = <span class="str">"budget_exceeded"</span>
+        <span class="kw">break</span>
+
+    <span class="cm"># LLM 调用：传入全部 tools 供选择</span>
+    resp = self.llm.chat(
+        self.messages,
+        tools=<span class="fn">list</span>(self.tools.values()),  <span class="cm">← 所有 Tool schema</span>
+    )
+
+    <span class="cm"># 保留完整的 assistant 消息（含 tool_calls）</span>
+    assistant_msg = {<span class="str">"role"</span>: resp[<span class="str">"role"</span>],
+                     <span class="str">"content"</span>: resp.get(<span class="str">"content"</span>, <span class="str">""</span>)}
+    <span class="kw">if</span> resp.get(<span class="str">"tool_calls"</span>):
+        assistant_msg[<span class="str">"tool_calls"</span>] = resp[<span class="str">"tool_calls"</span>]
+    self.messages.append(assistant_msg)        <span class="cm">← 加入对话历史</span></pre>
+</div>
+</div>
+
+<!-- Connector: tool call branch -->
+<div class="shutter" id="s-c-tool">
+<div class="shutter-inner">
+<div class="si-label"><span>🔀 分支：检测 tool_calls</span><span class="si-file">L419</span></div>
+<pre><span class="cm"># LLM 返回值中是否包含 tool_calls？</span>
+<span class="kw">if</span> <span class="kw">not</span> resp.get(<span class="str">"tool_calls"</span>):
+    <span class="cm"># → 直接输出答案，进入 Verify 阶段</span>
+    answer = resp.get(<span class="str">"content"</span>, <span class="str">""</span>)
+    ...
+<span class="kw">else</span>:
+    <span class="cm"># → 进入 Act 阶段，执行工具</span>
+    <span class="kw">for</span> tc <span class="kw">in</span> resp.get(<span class="str">"_parsed_tool_calls"</span>, []):</pre>
+</div>
+</div>
+
+<!-- Connector: direct answer branch -->
+<div class="shutter" id="s-c-answer">
+<div class="shutter-inner">
+<div class="si-label"><span>🔀 分支：直接输出 → 验证</span><span class="si-file">L419-452</span></div>
+<pre><span class="cm"># LLM 没有调用工具，直接给出答案 → 进入验证</span>
+<span class="kw">if</span> <span class="kw">not</span> resp.get(<span class="str">"tool_calls"</span>):
+    answer = resp.get(<span class="str">"content"</span>, <span class="str">""</span>)
+    <span class="kw">if</span> self.verifier.verify(answer):          <span class="cm">← Verify</span>
+        self.state.status = <span class="str">"done"</span>
+        self.state.save()
+        <span class="kw">return</span> answer
+    <span class="kw">else</span>:
+        self._retry_count += <span class="num">1</span>
+        <span class="kw">if</span> self._retry_count > self.budget.max_retries:
+            <span class="kw">return</span> answer + <span class="str">"\\n⚠️ Verification failed"</span>
+        <span class="cm"># 注入验证失败反馈 → 继续循环</span>
+        self.messages.append({
+            <span class="str">"role"</span>: <span class="str">"user"</span>,
+            <span class="str">"content"</span>: <span class="str">f"质量检查未通过，请改进：{self.verifier.summary()}"</span>
+        })
+        <span class="kw">continue</span>  <span class="cm">← 回到 Think</span></pre>
+</div>
+</div>
+
+<!-- Act -->
+<div class="shutter" id="s-act">
+<div class="shutter-inner">
+<div class="si-label"><span>🛠 Act — 工具执行</span><span class="si-file">L454-476</span></div>
+<pre><span class="cm"># 遍历工具调用，逐个执行</span>
+<span class="kw">for</span> tc <span class="kw">in</span> resp.get(<span class="str">"_parsed_tool_calls"</span>, []):
+    tool = self.tools.get(tc[<span class="str">"name"</span>])       <span class="cm">← 按名查找</span>
+    <span class="kw">if</span> <span class="kw">not</span> tool:
+        result = <span class="str">f"[Unknown tool: {tc['name']}]"</span>
+    <span class="kw">else</span>:
+        result = tool.execute(**tc[<span class="str">'args'</span>])  <span class="cm">← 调用 handler</span>
+
+    <span class="cm"># 结果注入 Observe</span>
+    self.messages.append({
+        <span class="str">"role"</span>: <span class="str">"tool"</span>,
+        <span class="str">"tool_call_id"</span>: tc[<span class="str">"id"</span>],
+        <span class="str">"content"</span>: result,                    <span class="cm">← 观察结果</span>
+    })</pre>
+</div>
+</div>
+
+<!-- Connector: result injection -->
+<div class="shutter" id="s-c-result">
+<div class="shutter-inner">
+<div class="si-label"><span>🔀 数据流：工具结果 → 消息上下文</span><span class="si-file">L466-468</span></div>
+<pre><span class="cm"># tool 结果以 role:tool 追加到 messages</span>
+self.messages.append({
+    <span class="str">"role"</span>: <span class="str">"tool"</span>,
+    <span class="str">"tool_call_id"</span>: tc[<span class="str">"id"</span>],
+    <span class="str">"content"</span>: result,            <span class="cm">← LLM 在下轮 Think 中看到此结果</span>
+})
+
+<span class="cm"># 每轮保存检查点</span>
+<span class="kw">if</span> self.state.checkpoint_path:
+    self.state.save()</pre>
+</div>
+</div>
+
+<!-- Observe -->
+<div class="shutter" id="s-observe">
+<div class="shutter-inner">
+<div class="si-label"><span>👀 Observe — 观察注入</span><span class="si-file">L466-480</span></div>
+<pre><span class="cm"># tool 结果 + 检查点保存 — 隐式操作</span>
+<span class="cm"># 关键机制：tool 结果以 role:tool 追加到 messages 列表</span>
+<span class="cm"># 下一轮 Think 时，LLM 看到完整的 tool 输出</span>
+<span class="cm"># 形成闭环：Think → Act → Observe → Think → ...</span>
+
+self.messages.append({
+    <span class="str">"role"</span>: <span class="str">"tool"</span>,
+    <span class="str">"tool_call_id"</span>: tc[<span class="str">"id"</span>],
+    <span class="str">"content"</span>: result,
+})
+
+<span class="cm"># ... 回到 for 循环顶部，开始下一轮 Think</span></pre>
+</div>
+</div>
+
+<!-- Connector: loopback -->
+<div class="shutter" id="s-c-loopback">
+<div class="shutter-inner">
+<div class="si-label"><span>🔀 循环回 Think</span><span class="si-file">L392 / L482-487</span></div>
+<pre><span class="cm"># 工具执行完毕后，回到 for 循环顶部</span>
+<span class="cm"># LLM 将在下一轮中看到 tool 结果并决定下一步</span>
+
+<span class="cm"># 循环自然结束（预算耗尽）</span>
+self.state.status = <span class="str">"max_iterations"</span>
+self.state.save()
+last = self.messages[-<span class="num">1</span>].get(<span class="str">"content"</span>, <span class="str">""</span>)
+<span class="kw">return</span> last <span class="kw">or</span> <span class="str">"[Max iterations reached — no final output]"</span></pre>
+</div>
+</div>
+
+<!-- Verify -->
+<div class="shutter" id="s-verify">
+<div class="shutter-inner">
+<div class="si-label"><span>🔍 Verify — 输出质量验证</span><span class="si-file">L255-277 (Verifier) + L420-451 (调用)</span></div>
+<pre><span class="cm"># 验证器定义</span>
+<span class="kw">class</span> <span class="fn">Verifier</span>:
+    DEFAULT_CHECKS = [
+        (<span class="str">"最小长度"</span>,  <span class="fn">lambda</span> t: <span class="fn">len</span>(t) > <span class="num">100</span>,
+         <span class="str">"内容过短（<100 chars）"</span>),
+        (<span class="str">"有实质内容"</span>, <span class="fn">lambda</span> t: <span class="fn">len</span>(t.split()) > <span class="num">20</span>,
+         <span class="str">"内容缺少实质性信息"</span>),
+    ]
+
+    <span class="kw">def</span> <span class="fn">verify</span>(self, text: <span class="kw">str</span>) -> <span class="kw">bool</span>:
+        self.failures = []
+        <span class="kw">for</span> name, fn, msg <span class="kw">in</span> self.checks:
+            <span class="kw">if</span> <span class="kw">not</span> fn(text):
+                self.failures.append(<span class="str">f"  ❌ [{name}] {msg}"</span>)
+        <span class="kw">return</span> <span class="fn">len</span>(self.failures) == <span class="num">0</span>
+
+<span class="cm"># 调用点（在 Agent.run 中）</span>
+answer = resp.get(<span class="str">"content"</span>, <span class="str">""</span>)
+<span class="kw">if</span> self.verifier.verify(answer):           <span class="cm">← 验证通过 → 返回</span>
+    self.state.status = <span class="str">"done"</span>
+    <span class="kw">return</span> answer
+<span class="kw">else</span>:
+    <span class="cm"># 注入失败反馈 → 重试（最多 3 次）</span>
+    self.messages.append({
+        <span class="str">"role"</span>: <span class="str">"user"</span>,
+        <span class="str">"content"</span>: <span class="str">f"质量检查未通过：{self.verifier.summary()}"</span>
+    })</pre>
+</div>
+</div>
+
+<!-- Connector: verify result -->
+<div class="shutter" id="s-c-verify-result">
+<div class="shutter-inner">
+<div class="si-label"><span>🔀 验证结果：pass → 输出 / fail → 重试</span><span class="si-file">L421-451</span></div>
+<pre><span class="cm"># pass → 最终输出</span>
+<span class="kw">if</span> self.verifier.verify(answer):
+    self.state.status = <span class="str">"done"</span>
+    self.state.summary = <span class="str">f"Completed in {i} iterations"</span>
+    self.state.save()
+    <span class="kw">return</span> answer
+
+<span class="cm"># fail → 重试</span>
+self._retry_count += <span class="num">1</span>
+<span class="kw">if</span> self._retry_count > self.budget.max_retries:   <span class="cm">← 3次上限</span>
+    <span class="kw">return</span> answer + <span class="str">f"\\n⚠️ Failed after {self._retry_count} retries"</span>
+
+<span class="cm"># 注入反馈后 continue，回到 Think</span>
+self.messages.append({<span class="str">"role"</span>: <span class="str">"user"</span>,
+    <span class="str">"content"</span>: <span class="str">f"质量检查未通过：{self.verifier.summary()}"</span>})
+<span class="kw">continue</span></pre>
+</div>
+</div>
+
+<!-- Final -->
+<div class="shutter" id="s-final">
+<div class="shutter-inner">
+<div class="si-label"><span>✅ 最终输出 / 错误处理</span><span class="si-file">L747-777</span></div>
+<pre><span class="cm"># 结果输出 + 多格式支持 + 异常处理</span>
+<span class="kw">try</span>:
+    result = agent.run(task, verbose, checkpoint)
+
+    <span class="kw">if</span> print_style == <span class="str">'report'</span>:
+        <span class="fn">print</span>(result)
+    <span class="kw">elif</span> print_style == <span class="str">'markdown'</span>:
+        <span class="fn">print</span>(<span class="str">f"**状态**: {agent.state.status}"</span>)
+        <span class="fn">print</span>(result)
+    <span class="kw">else</span>:  <span class="cm"># pretty (default)</span>
+        <span class="fn">print</span>(<span class="str">f"📋 FINAL RESULT [{agent.state.status}]"</span>)
+        <span class="fn">print</span>(result)
+
+<span class="kw">except</span> <span class="fn">ValueError</span> <span class="kw">as</span> e:                   <span class="cm">← 配置错误</span>
+    helper._print_with_emoji(<span class="str">f"配置错误: {e}"</span>, <span class="str">'❌'</span>)
+<span class="kw">except</span> <span class="fn">KeyboardInterrupt</span>:                 <span class="cm">← Ctrl+C</span>
+    helper._print_with_emoji(<span class="str">"用户中断操作"</span>, <span class="str">'⚠️'</span>)
+<span class="kw">except</span> <span class="fn">Exception</span> <span class="kw">as</span> e:                   <span class="cm">← 兜底</span>
+    helper._print_with_emoji(<span class="str">f"运行错误: {e}"</span>, <span class="str">'❌'</span>)</pre>
+</div>
+</div>
+
+</div><!-- /shutters -->
+
+<!-- Summary -->
+<div class="summary-grid">
+  <div class="scard"><div class="sc-num" style="color:#c084fc">Think</div><div class="sc-label">LLM 推理决策</div></div>
+  <div class="scard"><div class="sc-num" style="color:#fb923c">Act</div><div class="sc-label">工具执行</div></div>
+  <div class="scard"><div class="sc-num" style="color:#34d399">Observe</div><div class="sc-label">结果注入</div></div>
+  <div class="scard"><div class="sc-num" style="color:#fbbf24">Verify</div><div class="sc-label">质量验证</div></div>
+  <div class="scard"><div class="sc-num" style="color:#60a5fa">Budget</div><div class="sc-label">三重上限</div></div>
+  <div class="scard"><div class="sc-num" style="color:#5a6380">×3</div><div class="sc-label">失败重试</div></div>
+</div>
+
+</div>
+
+<script>
+// ── Shutter toggle with accordion logic ──
+const shutterMap = {
+  'entry': 's-entry', 'c-task': 's-c-task',
+  'think': 's-think', 'c-tool': 's-c-tool', 'c-answer': 's-c-answer',
+  'act': 's-act', 'c-result': 's-c-result',
+  'observe': 's-observe', 'c-loopback': 's-c-loopback',
+  'verify': 's-verify', 'c-verify-result': 's-c-verify-result',
+  'final': 's-final',
+};
+
+let currentOpen = null;
+
+function toggleShutter(id) {
+  const panel = document.getElementById(shutterMap[id]);
+  const node = document.getElementById('n-' + (id.startsWith('c-') ? id.substring(2) : id));
+  const conn = document.getElementById(id);
+
+  if (!panel) return;
+
+  if (currentOpen && currentOpen !== id) {
+    const prev = document.getElementById(shutterMap[currentOpen]);
+    if (prev) prev.classList.remove('open');
+    const prevNode = document.getElementById('n-' + (currentOpen.startsWith('c-') ? currentOpen.substring(2) : currentOpen));
+    if (prevNode) prevNode.classList.remove('active');
+    const prevConn = document.getElementById(currentOpen);
+    if (prevConn && currentOpen.startsWith('c-')) prevConn.classList.remove('active');
+  }
+
+  const isOpening = !panel.classList.contains('open');
+  panel.classList.toggle('open');
+  if (node) node.classList.toggle('active');
+  if (conn && id.startsWith('c-')) conn.classList.toggle('active');
+
+  currentOpen = isOpening ? id : null;
+
+  if (isOpening) {
+    setTimeout(() => panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 200);
+  }
+}
+
+function focusNode(id) {
+  const panelId = shutterMap[id];
+  if (!panelId) return;
+  const panel = document.getElementById(panelId);
+  if (!panel.classList.contains('open')) {
+    toggleShutter(id);
+  }
+  document.getElementById('n-' + id)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+</script>
+</body>
+</html>
