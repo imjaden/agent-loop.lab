@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<link rel="icon" href="https://www.jaden.tech/static/img/favicon.png?t=1780910447" type="image/x-icon">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent Loop · 数据流可视化</title>
+<style>
+:root{--bg:#0b0e1a;--bg2:#111827;--bg3:#1a1f35;--text:#e0e6f0;--muted:#5a6380;--border:#2a3050;--entry:#93c5fd;--think:#c084fc;--act:#fb923c;--observe:#34d399;--verify:#fbbf24;--final:#38bdf8}
+body{background:var(--bg);color:var(--text);font-family:'SF Pro','PingFang SC',sans-serif;}
+.container{max-width:900px;margin:0 auto}
+header{text-align:center;}
+h1{font-size:22px;font-weight:700;background:linear-gradient(90deg,#60a5fa,#a78bfa);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:4px}
+.sub{font-size:12px;color:var(--muted)}
+.sub code{color:var(--entry)}
+.shutter{max-height:2000px;overflow:hidden;transition:max-height .5s cubic-bezier(.4,0,.2,1),opacity .3s;opacity:1}
+.shutter.collapsed{max-height:0;opacity:0}
+.source{max-height:0;overflow:hidden;transition:max-height .5s cubic-bezier(.4,0,.2,1),opacity .3s;opacity:0}
+.source.open{max-height:3000px;opacity:1}
+.flow{display:flex;flex-direction:column;align-items:center;padding:20px 0}
+.fnode{position:relative;width:100%;max-width:500px;border-radius:12px;padding:16px 20px;border:1px solid transparent;cursor:pointer;transition:all .3s}
+.fnode:hover{transform:translateY(-2px);filter:brightness(1.1)}
+.fnode:hover .hint{opacity:.8}
+.title{display:flex;align-items:center;gap:10px;font-size:15px;font-weight:700}
+.badge{display:inline-block;font-size:9px;font-weight:700;padding:2px 8px;border-radius:4px;letter-spacing:.5px}
+.desc{font-size:12px;margin-top:4px;opacity:.6;line-height:1.5}
+.hint{position:absolute;right:16px;top:50%;transform:translateY(-50%);font-size:11px;opacity:.4;transition:opacity .2s}
+.n-entry{background:linear-gradient(135deg,rgba(96,165,250,.08),rgba(96,165,250,.02));border-color:rgba(96,165,250,.12)}.n-entry .badge{background:rgba(96,165,250,.15);color:var(--entry)}
+.n-think{background:linear-gradient(135deg,rgba(168,85,247,.08),rgba(168,85,247,.02));border-color:rgba(168,85,247,.12)}.n-think .badge{background:rgba(168,85,247,.15);color:var(--think)}
+.n-act{background:linear-gradient(135deg,rgba(251,146,60,.08),rgba(251,146,60,.02));border-color:rgba(251,146,60,.12)}.n-act .badge{background:rgba(251,146,60,.15);color:var(--act)}
+.n-observe{background:linear-gradient(135deg,rgba(52,211,153,.08),rgba(52,211,153,.02));border-color:rgba(52,211,153,.12)}.n-observe .badge{background:rgba(52,211,153,.15);color:var(--observe)}
+.n-verify{background:linear-gradient(135deg,rgba(251,191,36,.08),rgba(251,191,36,.02));border-color:rgba(251,191,36,.12)}.n-verify .badge{background:rgba(251,191,36,.15);color:var(--verify)}
+.n-final{background:linear-gradient(135deg,rgba(14,165,233,.08),rgba(14,165,233,.02));border-color:rgba(14,165,233,.12)}.n-final .badge{background:rgba(14,165,233,.15);color:var(--final)}
+.conn{display:flex;justify-content:center;align-items:center;height:36px;position:relative;width:100%;max-width:400px}
+.conn-line{position:absolute;width:2px;height:100%;background:var(--border)}
+.conn-arrow{color:var(--muted);font-size:12px}
+.conn-label{position:absolute;right:0;font-size:10px;color:var(--muted)}
+.loop-note{text-align:center;font-size:10px;color:var(--muted);letter-spacing:2px;margin:8px 0}
+.panel{background:var(--bg2);border-radius:12px;border:1px solid var(--border);margin:16px 0;overflow:hidden}
+.panel-header{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--bg3);border-bottom:1px solid var(--border)}
+.panel-title{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700}
+.tag{font-size:10px;padding:2px 8px;border-radius:4px;font-weight:600}
+.back{font-size:11px;color:var(--muted);cursor:pointer;padding:6px 12px;border-radius:6px;border:1px solid var(--border);transition:all .2s}
+.back:hover{background:var(--bg);color:var(--text);border-color:var(--entry)}
+.panel-body{padding:16px}
+.code{background:var(--bg);border-radius:8px;padding:14px;font-family:'SF Mono','JetBrains Mono',monospace;font-size:11px;line-height:1.7;overflow-x:auto;white-space:pre;tab-size:2}
+.kw{color:var(--think)}.fn{color:var(--entry)}.str{color:var(--observe)}.num{color:var(--verify)}.cm{color:var(--muted);font-style:italic}.op{color:var(--act)}
+footer{text-align:center;margin-top:6px;padding-top:6px;border-top:1px solid var(--border)}
+footer span{font-size:11px;color:var(--muted);margin:0 8px}
+@media(max-width:768px){h1{font-size:18px}.fnode{padding:12px 14px;max-width:100%}.title{font-size:13px}.code{font-size:10px}}
+</style>
+</head>
+<body>
+<div class="container">
+<header>
+  <h1>Agent Loop · 数据流可视化</h1>
+  <div class="sub" style="display: none;">点击节点查看源码 · <code>agent-loop.py</code></div>
+</header>
+
+<!-- 数据流图 -->
+<div class="shutter" id="flowView">
+<div class="flow">
+  <div class="fnode n-entry" onclick="showSrc('entry')"><div class="title"><span class="badge">ENTRY</span>🚪 main() — CLI 入口</div><div class="desc">参数解析 → 环境变量 → Agent 构建 → 任务输入</div><div class="hint">👆 点击查看源码</div></div>
+  <div class="conn"><div class="conn-line"></div><div class="conn-arrow">▼</div><div class="conn-label">task → run()</div></div>
+
+  <div class="fnode n-think" onclick="showSrc('think')"><div class="title"><span class="badge">THINK</span>🤔 LLM 推理</div><div class="desc">上下文 → LLM.chat() → 返回 tool_calls 或直接答案</div><div class="hint">👆 点击查看源码</div></div>
+
+  <div style="display:flex;width:100%;max-width:500px;margin:0">
+    <div class="conn" style="flex:1"><div class="conn-line"></div><div class="conn-arrow">▼</div><div class="conn-label" style="right:8px">tool_calls?</div></div>
+    <div class="conn" style="flex:1"><div class="conn-line"></div><div class="conn-arrow">▼</div><div class="conn-label">直接输出</div></div>
+  </div>
+
+  <div class="fnode n-act" onclick="showSrc('act')" style="margin-top:-8px"><div class="title"><span class="badge">ACT</span>🛠 工具执行</div><div class="desc">遍历 tool_calls → ToolBase.execute() → 捕获结果</div><div class="hint">👆 点击查看源码</div></div>
+  <div class="conn"><div class="conn-line"></div><div class="conn-arrow">▼</div><div class="conn-label">结果注入</div></div>
+
+  <div class="fnode n-observe" onclick="showSrc('observe')"><div class="title"><span class="badge">OBSERVE</span>👀 观察结果</div><div class="desc">role:tool 消息追加 → 下轮 Think 可见</div><div class="hint">👆 点击查看源码</div></div>
+  <div class="conn"><div class="conn-line"></div><div class="conn-arrow">▲</div><div class="conn-label" style="right:8px">循环</div></div>
+  <div class="loop-note">⬆ Think → Act → Observe → Think ⬆</div>
+
+  <div class="fnode n-verify" onclick="showSrc('verify')"><div class="title"><span class="badge">VERIFY</span>🔍 质量验证</div><div class="desc">Verifier 检查 → fail 则注入反馈重试</div><div class="hint">👆 点击查看源码</div></div>
+  <div class="conn"><div class="conn-line"></div><div class="conn-arrow">▼</div><div class="conn-label">pass / fail</div></div>
+
+  <div class="fnode n-final" onclick="showSrc('final')"><div class="title"><span class="badge">DONE</span>✅ 最终输出</div><div class="desc">返回结果 + 状态持久化 + 控制台输出</div><div class="hint">👆 点击查看源码</div></div>
+</div>
+</div>
+
+<!-- 源码视图 -->
+<div class="source" id="sourceView">
+
+  <div class="panel" id="src-entry" style="display:none">
+    <div class="panel-header">
+      <div class="panel-title"><span class="tag" style="background:rgba(96,165,250,.15);color:var(--entry)">ENTRY</span>main() — CLI 入口</div>
+      <span class="back" onclick="showFlow()">← 返回流程图</span>
+    </div>
+    <div class="panel-body">
+      <div class="code"><span class="cm"># CLI 参数解析 → 环境变量加载 → Agent 构建 → 任务执行</span>
+<span class="kw">def</span> <span class="fn">main</span>():
+    parser = argparse.ArgumentParser(description=<span class="str">"Agent Loop v2"</span>)
+    parser.add_argument(<span class="str">"task"</span>, nargs=<span class="str">"*"</span>)
+    parser.add_argument(<span class="str">"--model"</span>, <span class="str">""</span>)
+    parser.add_argument(<span class="str">"--api-key"</span>, <span class="str">""</span>)
+    <span class="cm"># ... 其他参数</span>
+
+    <span class="cm"># LLM 配置</span>
+    config = <span class="fn">LLMConfig</span>(
+        api_key=args.api_key <span class="kw">or</span> <span class="fn">LLMConfig</span>.api_key,
+        model=args.model <span class="kw">or</span> <span class="str">"deepseek-v4-flash"</span>,
+    )
+
+    <span class="cm"># 预算控制（三重上限）</span>
+    budget = <span class="fn">Budget</span>(
+        max_iterations=args.max_iter <span class="kw">or</span> <span class="num">25</span>,
+        max_duration=args.max_duration <span class="kw">or</span> <span class="num">600</span>,
+    )
+
+    <span class="cm"># Agent 实例化并运行</span>
+    agent = <span class="fn">Agent</span>(llm, tools, system_prompt=system,
+                    verifier=verifier, budget=budget)
+    result = agent.run(task, verbose=<span class="kw">not</span> args.quiet,
+                      checkpoint=args.checkpoint)</div>
+    </div>
+  </div>
+
+  <div class="panel" id="src-think" style="display:none">
+    <div class="panel-header">
+      <div class="panel-title"><span class="tag" style="background:rgba(168,85,247,.15);color:var(--think)">THINK</span>LLM 推理决策</div>
+      <span class="back" onclick="showFlow()">← 返回流程图</span>
+    </div>
+    <div class="panel-body">
+      <div class="code"><span class="cm"># 主循环：反复执行 Think → Act → Observe → Verify</span>
+<span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="num">1</span>, self.budget.max_iterations + <span class="num">1</span>):
+    self.state.iteration = i
+
+    <span class="cm"># ── Think: LLM 调用 ──</span>
+    resp = self.llm.chat(
+        self.messages,
+        tools=<span class="fn">list</span>(self.tools.values()),  <span class="cm">← 注册所有工具</span>
+    )
+
+    <span class="cm"># 保留完整消息（含 tool_calls）</span>
+    assistant_msg = {<span class="str">"role"</span>: <span class="str">"assistant"</span>,
+                     <span class="str">"content"</span>: resp.get(<span class="str">"content"</span>, <span class="str">""</span>)}
+    <span class="kw">if</span> resp.get(<span class="str">"tool_calls"</span>):
+        assistant_msg[<span class="str">"tool_calls"</span>] = resp[<span class="str">"tool_calls"</span>]
+    self.messages.append(assistant_msg)</div>
+    </div>
+  </div>
+
+  <div class="panel" id="src-act" style="display:none">
+    <div class="panel-header">
+      <div class="panel-title"><span class="tag" style="background:rgba(251,146,60,.15);color:var(--act)">ACT</span>工具执行</div>
+      <span class="back" onclick="showFlow()">← 返回流程图</span>
+    </div>
+    <div class="panel-body">
+      <div class="code"><span class="cm"># ── Act: 执行工具 ──</span>
+<span class="kw">if</span> resp.get(<span class="str">"tool_calls"</span>):
+    <span class="kw">for</span> tc <span class="kw">in</span> resp.get(<span class="str">"_parsed_tool_calls"</span>, []):
+        tool = self.tools.get(tc[<span class="str">"name"</span>])   <span class="cm">← 按名查找工具</span>
+        <span class="kw">if</span> <span class="kw">not</span> tool:
+            result = <span class="str">f"[Unknown tool: {tc['name']}]"</span>
+        <span class="kw">else</span>:
+            result = tool.execute(**tc[<span class="str">'args'</span>])  <span class="cm">← 调用 handler</span>
+
+        <span class="cm"># Observe: 结果注入消息</span>
+        self.messages.append({
+            <span class="str">"role"</span>: <span class="str">"tool"</span>,
+            <span class="str">"tool_call_id"</span>: tc[<span class="str">"id"</span>],
+            <span class="str">"content"</span>: result,
+        })</div>
+    </div>
+  </div>
+
+  <div class="panel" id="src-observe" style="display:none">
+    <div class="panel-header">
+      <div class="panel-title"><span class="tag" style="background:rgba(52,211,153,.15);color:var(--observe)">OBSERVE</span>观察结果</div>
+      <span class="back" onclick="showFlow()">← 返回流程图</span>
+    </div>
+    <div class="panel-body">
+      <div class="code"><span class="cm"># 工具结果追加到 messages → 下轮 Think 可见</span>
+<span class="cm"># 形成闭环：Think → Act → Observe → Think</span>
+
+self.messages.append({
+    <span class="str">"role"</span>: <span class="str">"tool"</span>,
+    <span class="str">"tool_call_id"</span>: tc[<span class="str">"id"</span>],
+    <span class="str">"content"</span>: result,
+})
+
+<span class="cm"># 循环回到 for 顶部，开始下一轮 Think</span></div>
+    </div>
+  </div>
+
+  <div class="panel" id="src-verify" style="display:none">
+    <div class="panel-header">
+      <div class="panel-title"><span class="tag" style="background:rgba(251,191,36,.15);color:var(--verify)">VERIFY</span>质量验证</div>
+      <span class="back" onclick="showFlow()">← 返回流程图</span>
+    </div>
+    <div class="panel-body">
+      <div class="code"><span class="cm"># LLM 没有 tool_calls → 直接输出答案 → 验证</span>
+<span class="kw">if</span> <span class="kw">not</span> resp.get(<span class="str">"tool_calls"</span>):
+    answer = resp.get(<span class="str">"content"</span>, <span class="str">""</span>)
+
+    <span class="cm"># ── Verify: 质量检查 ──</span>
+    <span class="kw">if</span> self.verifier.verify(answer):
+        self.state.status = <span class="str">"done"</span>
+        self.state.save()
+        <span class="kw">return</span> answer  <span class="cm">← 完成，输出结果</span>
+    <span class="kw">else</span>:
+        <span class="cm"># 验证失败 → 注入反馈重试</span>
+        self._retry_count += <span class="num">1</span>
+        <span class="kw">if</span> self._retry_count > self.budget.max_retries:
+            <span class="kw">return</span> answer + <span class="str">"\\n⚠️ Verification failed"</span>
+        self.messages.append({
+            <span class="str">"role"</span>: <span class="str">"user"</span>,
+            <span class="str">"content"</span>: <span class="str">f"质量检查未通过：{self.verifier.summary()}"</span>
+        })
+        <span class="kw">continue</span>  <span class="cm">← 回到 Think 重试</span></div>
+    </div>
+  </div>
+
+  <div class="panel" id="src-final" style="display:none">
+    <div class="panel-header">
+      <div class="panel-title"><span class="tag" style="background:rgba(14,165,233,.15);color:var(--final)">DONE</span>最终输出</div>
+      <span class="back" onclick="showFlow()">← 返回流程图</span>
+    </div>
+    <div class="panel-body">
+      <div class="code"><span class="cm"># 任务完成 → 输出结果 + 状态持久化</span>
+
+<span class="cm"># 状态更新</span>
+self.state.status = <span class="str">"done"</span>
+self.state.summary = <span class="str">f"Completed in {i} iterations"</span>
+self.state.save()
+
+<span class="cm"># 返回最终答案</span>
+<span class="kw">return</span> answer
+
+<span class="cm"># ── main() 中打印输出 ──</span>
+<span class="fn">print</span>(<span class="str">f"\\n{'='*50}"</span>)
+<span class="fn">print</span>(<span class="str">f"📋 FINAL RESULT [{agent.state.status}]"</span>)
+<span class="fn">print</span>(result)</div>
+    </div>
+  </div>
+
+</div>
+
+<footer><span>Agent Loop v2.0</span>·<span>可视化</span></footer>
+</div>
+
+<script>
+const f=document.getElementById('flowView'),s=document.getElementById('sourceView');
+let x;
+function showSrc(id){document.querySelectorAll('.panel').forEach(p=>p.style.display='none');const p=document.getElementById('src-'+id);if(p)p.style.display='block';x=id;f.classList.add('collapsed');s.classList.add('open');window.scrollTo({top:0,behavior:'smooth'})}
+function showFlow(){s.classList.remove('open');f.classList.remove('collapsed');x=null}
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&x)showFlow()});
+</script>
+</body>
+</html>
