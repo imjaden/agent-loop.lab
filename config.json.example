@@ -1,0 +1,12 @@
+{
+  "tavily_api_key": "",
+  "model": "deepseek-v4-flash",
+  "api_key": "",
+  "base_url": "https://api.deepseek.com/v1",
+  "prompt": "prompts/default.md",
+  "workdir": ".",
+  "checkpoint": "",
+  "max_iter": 10,
+  "max_duration": 600,
+  "verbose": true
+}
