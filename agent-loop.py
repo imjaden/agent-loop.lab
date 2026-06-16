@@ -1,60 +1,9 @@
+#!/usr/bin/env python3
 """
-Agent Loop Engineering v2 — 最小化 Agent 循环框架
+Agent Loop Engineering v1.3 — 最小化 Agent 循环框架
 
-Version: 2.0(2026-06-16)
-Description
-- 基于 Loop Engineering 方法论的 AI Agent 循环框架
-- Think → Act → Observe → Verify 闭环执行
-- 支持多工具调用、状态持久化、预算控制
-
-设计原则（源自 Loop Engineering 方法论）：
-  1. 持续运行 — 后台自动推进，不占人注意力
-  2. 状态感知 — 读取进度状态，断点续跑
-  3. 自动验证 — 输出自检，不合格自动重试
-  4. 预算控制 — Token/时间/失败 三重上限
-  5. 停止条件 — 明确的终止信号，避免无效循环
-
-Loop 范式：user_task → [think → act → observe → verify]ⁿ → done
-
-LLM 默认：deepseek-v4-flash（OpenAI 兼容，轻量快速）
-
-【指令清单】
-| 指令 | 功能说明 |
-|------|---------|
-| python3 agent-loop.py <任务> | 直接执行任务 |
-| --model <模型> | 指定 LLM 模型 |
-| --api-key <key> | 指定 API Key |
-| --system <文件> | 自定义系统提示词 |
-| --checkpoint <路径> | 检查点文件路径 |
-| --max-iter <N> | 最大迭代次数 |
-| --max-duration <秒> | 最大运行时长 |
-| --quiet | 静默模式 |
-| --pretty/report/markdown | 输出格式 |
-
-【辅助工具】
-| 工具方法 | 功能说明 |
-|---------|---------|
-| _format_path() | 路径格式化，支持项目相对路径 |
-| _print_with_emoji() | 智能打印，自动匹配 Emoji 前缀 |
-| _load_secrets() | 从 secret-manager 加载敏感信息 |
-
-Environments:
-- Python 3.12+
-- IDE: TRAE CN
-- LLM: deepseek-v4-flash
-
-Related Paths
-- 项目路径: ~/CodeSpace/AgentLoop
-- 缓存目录: /tmp/_agent_*
-
-Dependency
-- openai
-- requests (用于 Tavily API)
-
-敏感信息管理
-- DEEPSEEK_API_KEY: DeepSeek API Key
-- TAVILY_API_KEY: Tavily 搜索 API Key
-- 推荐使用 secret-manager 统一管理
+基于 Loop Engineering 方法论：Think → Act → Observe → Verify 闭环执行。
+默认 LLM: deepseek-v4-flash（OpenAI 兼容）
 """
 
 import json, os, subprocess, sys, time, hashlib
@@ -63,94 +12,45 @@ from typing import Callable, Optional
 from datetime import datetime, timezone
 from pathlib import Path
 
-
 # ──────────────────────────────────────────────
 # 0. 辅助工具
 # ──────────────────────────────────────────────
-
-class AgentHelper:
-    """Agent Loop 辅助工具类"""
-
-    def __init__(self, project_root: str = None):
-        self.project_root = Path(project_root or os.path.dirname(os.path.abspath(__file__)))
-
-    def _format_path(self, absolute_path: str) -> str:
-        """【辅助工具】格式化路径：绝对路径若包含当前项目路径，则打印相对路径"""
+def _load_config(path: str = "config.json") -> dict:
+    """读取配置文件，不存在返回默认配置"""
+    default = {
+        "tavily_api_key": "",
+        "model": "deepseek-v4-flash",
+        "api_key": "",
+        "base_url": "https://api.deepseek.com/v1",
+        "prompt": "prompts/default.md",
+        "workdir": ".",
+        "checkpoint": "",
+        "max_iter": 10,
+        "max_duration": 600,
+        "verbose": True,
+    }
+    if os.path.exists(path):
         try:
-            abs_p = Path(absolute_path).resolve()
-            if str(abs_p).startswith(str(self.project_root)):
-                return os.path.relpath(absolute_path, os.getcwd())
-        except (ValueError, OSError):
-            pass
-        return absolute_path
-
-    def _print_with_emoji(self, message: str, prefix_emoji: str = None):
-        """【辅助工具】智能打印：根据内容自动添加 Emoji 前缀
-
-        Args:
-            message: 打印内容
-            prefix_emoji: 强制指定 Emoji（可选），未指定时根据内容智能匹配
-        """
-        if prefix_emoji:
-            print(f"{prefix_emoji} {message}")
-            return
-
-        msg_lower = message.lower()
-        emoji_rules = [
-            (['完成', '成功', 'done', '已生成', '已创建', '已更新', 'success', 'ok', 'written'],
-             '✅'),
-            (['错误', '失败', 'error', 'fail', '中止', '不存在', 'missing'], '❌'),
-            (['警告', '注意', 'warning', 'warn', '已过期', '检测', '已有'], '⚠️'),
-            (['帮助', 'help', '文档', '说明'], '📖'),
-            (['创建', '笔记', '写入', 'create', 'write'], '📝'),
-            (['缓存', '保存', 'cache', 'save', 'checkpoint'], '💾'),
-            (['思考', 'thinking', '分析', 'analyzing'], '🤔'),
-            (['执行', '运行', 'executing', 'running'], '⚙️'),
-            (['验证', 'verify', '检查', 'check'], '🔍'),
-            (['迭代', 'iter', 'iteration'], '🔄'),
-        ]
-
-        for keywords, emoji in emoji_rules:
-            if any(k in msg_lower for k in keywords):
-                print(f"{emoji} {message}")
-                return
-
-        print(f"ℹ️ {message}")
-
-    def _load_secrets(self) -> dict:
-        """【辅助工具】从 secret-manager 加载敏感信息"""
-        try:
-            secret_manager_path = Path.home() / 'CodeSpace' / 'script-miner' / 'efficiency' / 'secret_manager.py'
-            if secret_manager_path.exists():
-                sys.path.append(str(secret_manager_path.parent))
-                from secret_manager import SecretManager
-                sm = SecretManager()
-                return sm._secrets
-        except ImportError:
-            pass
-        return {}
-
-
-# 全局辅助工具实例
-helper = AgentHelper()
-
+            with open(path) as f:
+                loaded = json.load(f)
+                return {**default, **loaded}
+        except json.JSONDecodeError:
+            print(f"⚠️ 配置文件 {path} 格式错误，使用默认配置")
+            return default
+    return default
 
 # ──────────────────────────────────────────────
 # 1. LLM 接口（OpenAI 兼容，默认 deepseek-v4-flash）
 # ──────────────────────────────────────────────
-
-DEEPSEEK_BASE = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
-DEEPSEEK_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
-
 @dataclass
 class LLMConfig:
-    api_key: str = DEEPSEEK_KEY or ""
-    base_url: str = DEEPSEEK_BASE
+    api_key: str = ""
+    base_url: str = "https://api.deepseek.com/v1"
     model: str = "deepseek-v4-flash"
     max_tokens: int = 16384
 
 class LLM:
-    """OpenAI 兼容 LLM 调用层，自动选择 base_url"""
+    """OpenAI 兼容 LLM 调用层"""
 
     def __init__(self, config: LLMConfig):
         self.config = config
@@ -159,13 +59,7 @@ class LLM:
     def _ensure(self):
         if self._client is None:
             if not self.config.api_key:
-                raise ValueError(
-                    "缺少 DEEPSEEK_API_KEY 环境变量。\n"
-                    "请设置环境变量后重试：\n"
-                    "  export DEEPSEEK_API_KEY='your-api-key-here'\n"
-                    "或在命令行中指定：\n"
-                    "  python agent-loop.py --api-key 'your-api-key-here' ..."
-                )
+                raise ValueError("缺少 api_key，请在 config.json 中配置")
             from openai import OpenAI
             self._client = OpenAI(
                 api_key=self.config.api_key,
@@ -210,11 +104,9 @@ class LLM:
             ]
         return result
 
-
 # ──────────────────────────────────────────────
 # 2. Tool 抽象
 # ──────────────────────────────────────────────
-
 @dataclass
 class ToolBase:
     name: str
@@ -247,11 +139,9 @@ class ToolBase:
         except Exception as e:
             return f"[Tool Error] {self.name}: {e}"
 
-
 # ──────────────────────────────────────────────
 # 3. Loop 工程 · 验证器
 # ──────────────────────────────────────────────
-
 class Verifier:
     """输出验证器：检查结果质量，支持自定义检查项"""
 
@@ -276,15 +166,13 @@ class Verifier:
             return "  ✅ All checks passed"
         return "\n".join(self.failures)
 
-
 # ──────────────────────────────────────────────
 # 4. Loop 工程 · 预算控制器
 # ──────────────────────────────────────────────
-
 @dataclass
 class Budget:
-    max_iterations: int = 25
-    max_tokens: int = 16384      # 估算上限
+    max_iterations: int = 10
+    max_tokens: int = 15000       # 估算上限
     max_retries: int = 3          # 验证失败重试上限
     max_duration: int = 600       # 秒
     start_time: float = field(default_factory=time.time)
@@ -302,11 +190,9 @@ class Budget:
     def remaining_str(self) -> str:
         return f"⏱ {self.elapsed:.0f}/{self.max_duration}s"
 
-
 # ──────────────────────────────────────────────
 # 5. Loop 工程 · 状态持久化
 # ──────────────────────────────────────────────
-
 @dataclass
 class LoopState:
     """可持久化的循环状态，支持断点续跑"""
@@ -333,11 +219,9 @@ class LoopState:
             return cls(**data)
         return None
 
-
 # ──────────────────────────────────────────────
 # 6. Agent 循环核心
 # ──────────────────────────────────────────────
-
 @dataclass
 class Step:
     iteration: int
@@ -397,7 +281,7 @@ class Agent:
                 self.state.status = "budget_exceeded"
                 self.state.summary = f"Budget exceeded ({self.budget.elapsed:.0f}s)"
                 if verbose:
-                    helper._print_with_emoji(f"Budget exceeded at iteration {i}", '⏰')
+                    print(f"⏰ Budget exceeded at iteration {i}")
                 break
 
             # ── Think ──
@@ -420,7 +304,7 @@ class Agent:
                 answer = resp.get("content", "")
                 if self.verifier.verify(answer):
                     if verbose:
-                        helper._print_with_emoji(f"Verified ({len(answer)} chars)", '✅')
+                        print(f"✅ Verified ({len(answer)} chars)")
                         print(self.verifier.summary())
                     self.state.status = "done"
                     self.state.summary = f"Completed in {i} iterations"
@@ -431,7 +315,7 @@ class Agent:
                     self._retry_count += 1
                     if self._retry_count > self.budget.max_retries:
                         if verbose:
-                            helper._print_with_emoji(f"Max retries ({self.budget.max_retries}) exceeded", '❌')
+                            print(f"❌ Max retries ({self.budget.max_retries}) exceeded")
                         # 返回最后一次的结果，附带失败说明
                         self.state.status = "failed"
                         self.state.summary = f"Failed after {self._retry_count} retries"
@@ -442,7 +326,7 @@ class Agent:
                             + self.verifier.summary()
                         )
                     if verbose:
-                        helper._print_with_emoji(f"Verification failed, retrying ({self._retry_count}/{self.budget.max_retries})", '🔄')
+                        print(f"🔄 Verification failed, retrying ({self._retry_count}/{self.budget.max_retries})")
                         print(self.verifier.summary())
                     # 注入验证失败反馈，让 LLM 改进
                     self.messages.append({
@@ -456,7 +340,8 @@ class Agent:
                 tool = self.tools.get(tc["name"])
                 if not tool:
                     result = f"[Unknown tool: {tc['name']}]"
-                    helper._print_with_emoji(f"Unknown tool: {tc['name']}", '⚠️')
+                    if verbose:
+                        print(f"⚠️ Unknown tool: {tc['name']}")
                 else:
                     if verbose:
                         print(f"[Iter {i}] 🛠  {tc['name']}({json.dumps(tc['args'], ensure_ascii=False)[:200]})")
@@ -486,33 +371,25 @@ class Agent:
         last = self.messages[-1].get("content", "") if self.messages else ""
         return last or "[Max iterations reached — no final output]"
 
-
 # ──────────────────────────────────────────────
 # 7. 内置 Tool 工厂
 # ──────────────────────────────────────────────
-
-def make_tools(workdir: str = ".") -> list[ToolBase]:
+def make_tools(workdir: str = ".", config: dict = None) -> list[ToolBase]:
+    cfg = config or {}
 
     def web_search(query: str, limit: int = 5) -> str:
         """Search the web for information."""
-        tavily_key = os.environ.get("TAVILY_API_KEY", "")
+        tavily_key = cfg.get("tavily_api_key", "") or os.environ.get("TAVILY_API_KEY", "")
         if not tavily_key:
-            return (
-                "[web_search 错误] 缺少 TAVILY_API_KEY 环境变量。\n"
-                "请设置后重试：export TAVILY_API_KEY='your-tavily-key'\n"
-                "或使用其他搜索方式。"
-            )
-        import urllib.parse
-        encoded = urllib.parse.quote(query)
+            return "[web_search] 错误: 缺少 tavily_api_key，请在 config.json 中配置"
+        payload = json.dumps({"api_key": tavily_key, "query": query, "limit": limit}).encode()
         r = subprocess.run(
-            ["curl", "-s",
-             "-H", f"Authorization: Bearer {tavily_key}",
-             f"https://api.tavily.com/search?query={encoded}&limit={limit}"],
+            ["curl", "-s", "-X", "POST",
+             "-H", "Content-Type: application/json",
+             "-d", payload, "https://api.tavily.com/search"],
             capture_output=True, text=True, timeout=15
         )
-        if r.stdout.strip():
-            return r.stdout[:6000]
-        return f"[web_search] No results for: {query}"
+        return r.stdout[:6000] if r.stdout.strip() else f"[web_search] 无结果: {query}"
 
     def web_extract(url: str) -> str:
         """Extract content from a URL."""
@@ -521,8 +398,9 @@ def make_tools(workdir: str = ".") -> list[ToolBase]:
             capture_output=True, text=True, timeout=30
         )
         if r.stdout.strip() == "200":
-            size = os.path.getsize("/tmp/_agent_page.html")
-            return f"[Fetched {size} bytes from {url}]"
+            with open("/tmp/_agent_page.html", "r", encoding="utf-8", errors="ignore") as f:
+                content = f.read()[:8000]
+            return f"[HTTP 200 from {url}]\n\n{content}"
         return f"HTTP {r.stdout.strip()}"
 
     def read_file(path: str) -> str:
@@ -563,204 +441,89 @@ def make_tools(workdir: str = ".") -> list[ToolBase]:
         ToolBase("run_python",  "Execute Python code",            run_python),
     ]
 
-
 # ──────────────────────────────────────────────
-# 8. 默认系统提示词
+# 8. 入口
 # ──────────────────────────────────────────────
-
-DEFAULT_SYSTEM_PROMPT = """你是 ALoop，一名售前架构师 AI 助手。
-
-## Loop 工作方式
-
-按照「思考 → 行动 → 观察 → 验证」循环推进任务：
-1. 先思考当前需要什么信息或操作
-2. 调用工具获取结果
-3. 观察结果，决定下一步
-4. 输出最终答案前，确保内容充实且有实质价值
-
-## 行为准则
-
-- 结论优先：先给核心结论，再给细节。用表格/列表组织复杂信息
-- 售前视角：站在客户业务价值角度思考
-- 文件规范：{主题名称}-v{主版本}.{次版本}-{日期}.md
-
-可用工具：web_search, web_extract, read_file, write_file, run_python
-"""
-
-
-# ──────────────────────────────────────────────
-# 9. 入口
-# ──────────────────────────────────────────────
-
-
 def _print_help():
     """【打印帮助信息】"""
     print("\n" + "=" * 60)
-    print("📖 Agent Loop v2 使用说明")
+    print("📖 Agent Loop v1.3 使用说明")
     print("=" * 60)
 
     print("\n【功能概述】")
     print("  基于 Loop Engineering 方法论的 AI Agent 循环框架")
     print("  Think → Act → Observe → Verify 闭环执行任务")
 
-    print("\n【环境变量】")
-    print("  DEEPSEEK_API_KEY     - DeepSeek API Key（必需）")
-    print("  TAVILY_API_KEY      - Tavily 搜索 API Key（必需）")
-    print("  DEEPSEEK_BASE_URL   - API Base URL（可选）")
-
-    print("\n【输出格式】")
-    print("  --pretty                   - PrettyTable 表格格式（默认）")
-    print("  --report                   - 简洁报告格式")
-    print("  --markdown                 - Markdown 格式")
-
-    print("\n【支持的参数】")
-    print("  <任务>              - 直接执行任务")
-    print("  --model <模型>      - 指定 LLM 模型")
-    print("  --api-key <key>     - 指定 API Key")
-    print("  --base-url <url>    - 指定 API Base URL")
-    print("  --system <文件>     - 自定义系统提示词文件")
-    print("  --workdir <目录>     - 工作目录")
-    print("  --checkpoint <路径> - 检查点文件路径")
-    print("  --max-iter <N>       - 最大迭代次数（默认 25）")
-    print("  --max-duration <秒> - 最大运行时长（默认 600）")
-    print("  --quiet             - 静默模式")
-
-    print("\n【内置工具】")
-    print("  web_search   - 搜索互联网（需要 TAVILY_API_KEY）")
-    print("  web_extract  - 提取网页内容")
-    print("  read_file    - 读取本地文件")
-    print("  write_file   - 写入本地文件")
-    print("  run_python   - 执行 Python 代码")
+    print("\n【配置文件】")
+    print("  config.json - 所有配置项（api_key, model, 预算等）")
 
     print("\n【使用示例】")
-    print("  python3 agent-loop.py '搜索长亭科技最新动态，当前日期\$(date \"+%Y-%m-%d\")，整理为 markdown 文档'")
-    print("  python3 agent-loop.py '分析代码' --model claude-sonnet-4")
-    print("  python3 agent-loop.py '完成任务' --max-iter 10 --report")
-    print("  python3 agent-loop.py --system custom-prompt.txt '任务'")
+    print("  python3 agent-loop.py '搜索长亭科技最新动态，整理为 markdown 文档'")
+    print("  cat task.txt | python3 agent-loop.py")
 
     print("\n" + "=" * 60)
 
-
 def main():
     import argparse
-    parser = argparse.ArgumentParser(description="Agent Loop Engineering v2", add_help=False)
-    parser.add_argument("task", nargs="*", help="Task prompt")
-    parser.add_argument("--model", default="", help="Model override")
-    parser.add_argument("--base-url", default="", help="API base URL override")
-    parser.add_argument("--api-key", default="", help="API key override")
-    parser.add_argument("--system", default="", help="Custom system prompt file")
-    parser.add_argument("--workdir", default=".", help="Working directory")
-    parser.add_argument("--checkpoint", default="", help="Path for state persistence")
-    parser.add_argument("--max-iter", type=int, default=0, help="Max iterations")
-    parser.add_argument("--max-duration", type=int, default=0, help="Max duration (seconds)")
-    parser.add_argument("--quiet", action="store_true", help="Suppress iteration output")
-    parser.add_argument("--pretty", action="store_true", help="Pretty output")
-    parser.add_argument("--report", action="store_true", help="Report output")
-    parser.add_argument("--markdown", action="store_true", help="Markdown output")
-    parser.add_argument("--help", "-h", action="store_true", help="Show this help message")
+    parser = argparse.ArgumentParser(description="Agent Loop Engineering v1.3", add_help=False)
+    parser.add_argument("task", nargs="*", help="任务描述")
+    parser.add_argument("--help", "-h", action="store_true", help="显示帮助信息")
     args = parser.parse_args()
 
-    # 显示帮助
     if args.help:
         _print_help()
         sys.exit(0)
 
-    # Task input
-    if args.task:
-        task = " ".join(args.task)
-    else:
-        task = sys.stdin.read().strip()
+    task = " ".join(args.task) if args.task else sys.stdin.read().strip()
     if not task:
         _print_help()
         sys.exit(1)
 
-    # 打印风格
-    print_style = 'pretty'
-    if args.report:
-        print_style = 'report'
-    elif args.markdown:
-        print_style = 'markdown'
+    cfg = _load_config()
 
-    # LLM config (default: deepseek-v4-flash)
     config = LLMConfig(
-        api_key=args.api_key or LLMConfig.api_key,
-        base_url=args.base_url or LLMConfig.base_url,
-        model=args.model or "deepseek-v4-flash",
+        api_key=cfg["api_key"],
+        base_url=cfg["base_url"],
+        model=cfg["model"],
     )
 
-    # Budget
     budget = Budget(
-        max_iterations=args.max_iter or 25,
-        max_duration=args.max_duration or 600,
+        max_iterations=cfg["max_iter"],
+        max_duration=cfg["max_duration"],
     )
 
-    # System prompt
-    system = DEFAULT_SYSTEM_PROMPT
-    if args.system:
-        with open(args.system) as f:
-            system = f.read()
+    prompt_file = cfg["prompt"]
+    if os.path.exists(prompt_file):
+        system = open(prompt_file).read()
+    else:
+        system = ""
+        if cfg["verbose"]:
+            print(f"⚠️ Prompt 文件不存在: {prompt_file}")
 
-    # Build & run
     llm = LLM(config)
-    tools = make_tools(workdir=args.workdir)
+    tools = make_tools(workdir=cfg["workdir"], config=cfg)
     verifier = Verifier()
     agent = Agent(llm, tools, system_prompt=system, verifier=verifier, budget=budget)
 
-    # 根据打印风格输出
-    if print_style == 'report':
-        print(f"[Agent Loop v2] {config.model} | Budget: {budget.max_iterations} iters / {budget.max_duration}s")
-        print(f"Task: {task[:80]}...")
-        print("-" * 50)
-    elif print_style == 'markdown':
-        print(f"## Agent Loop v2 — {config.model}")
-        print()
-        print(f"**任务**: {task[:80]}...")
-        print()
-        print("| 配置 | 值 |")
-        print("|------|-----|")
-        print(f"| 模型 | {config.model} |")
-        print(f"| 最大迭代 | {budget.max_iterations} |")
-        print(f"| 最大时长 | {budget.max_duration}s |")
-        print()
-        print("---")
-    else:
-        print(f"🤖 Agent Loop v2 — {config.model}")
-        print(f"📝 Task: {task[:120]}...")
-        print(f"🔧 Tools: {', '.join(t.name for t in tools)}")
-        print(f"⚙️ Budget: {budget.max_iterations} iters / {budget.max_duration}s / {budget.max_retries} retries")
+    print(f"[Agent Loop v1.3] {config.model} | Budget: {budget.max_iterations} iters / {budget.max_duration}s")
+    print(f"Task: {task[:80]}...")
+    print("-" * 50)
 
     try:
-        result = agent.run(task, verbose=not args.quiet, checkpoint=args.checkpoint)
-
-        # 根据打印风格输出结果
-        if print_style == 'report':
-            print("-" * 50)
-            print(f"Status: {agent.state.status}")
-            print(f"Result:\n{result}")
-        elif print_style == 'markdown':
-            print("---")
-            print()
-            print(f"**状态**: {agent.state.status}")
-            print()
-            print("### 结果")
-            print()
-            print(result)
-        else:
-            print(f"\n{'='*50}")
-            print(f"📋 FINAL RESULT [{agent.state.status}]")
-            print(f"{'='*50}")
-            print(result)
+        result = agent.run(task, verbose=cfg["verbose"], checkpoint=cfg["checkpoint"])
+        print("-" * 50)
+        print(f"Status: {agent.state.status}")
+        print(f"Result:\n{result}")
 
     except ValueError as e:
-        helper._print_with_emoji(f"配置错误: {e}", '❌')
+        print(f"[Error] 配置错误: {e}")
         sys.exit(1)
     except KeyboardInterrupt:
-        helper._print_with_emoji("用户中断操作", '⚠️')
+        print("[Warning] 用户中断操作")
         sys.exit(1)
     except Exception as e:
-        helper._print_with_emoji(f"运行错误: {type(e).__name__}: {e}", '❌')
+        print(f"[Error] 运行错误: {type(e).__name__}: {e}")
         sys.exit(1)
-
 
 if __name__ == "__main__":
     main()
