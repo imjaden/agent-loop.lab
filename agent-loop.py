@@ -393,13 +393,16 @@ def make_tools(workdir: str = ".", config: dict = None) -> list[ToolBase]:
 
     def web_extract(url: str) -> str:
         """Extract content from a URL."""
+        import uuid
+        tmp_file = f"/tmp/_agent_page_{uuid.uuid4().hex[:8]}.html"
         r = subprocess.run(
-            ["curl", "-sL", url, "-o", "/tmp/_agent_page.html", "-w", "%{http_code}"],
+            ["curl", "-sL", url, "-o", tmp_file, "-w", "%{http_code}"],
             capture_output=True, text=True, timeout=30
         )
         if r.stdout.strip() == "200":
-            with open("/tmp/_agent_page.html", "r", encoding="utf-8", errors="ignore") as f:
+            with open(tmp_file, "r", encoding="utf-8", errors="ignore") as f:
                 content = f.read()[:8000]
+            os.remove(tmp_file)
             return f"[HTTP 200 from {url}]\n\n{content}"
         return f"HTTP {r.stdout.strip()}"
 
@@ -421,12 +424,15 @@ def make_tools(workdir: str = ".", config: dict = None) -> list[ToolBase]:
 
     def run_python(code: str) -> str:
         """Execute Python code in a subprocess."""
-        with open("/tmp/_agent_exec.py", "w") as f:
+        import uuid
+        tmp_file = f"/tmp/_agent_exec_{uuid.uuid4().hex[:8]}.py"
+        with open(tmp_file, "w") as f:
             f.write(code)
         r = subprocess.run(
-            ["python3", "/tmp/_agent_exec.py"],
+            ["python3", tmp_file],
             capture_output=True, text=True, timeout=30
         )
+        os.remove(tmp_file)
         out = r.stdout.strip()[:4000]
         err = r.stderr.strip()[:2000]
         if err:
