@@ -15,17 +15,18 @@ User Task
 ┌───────────────────────────────────────────┐
 │  Agent Loop                               │
 │                                           │
-│  [Think]   LLM 推理决策                   │
+│  [Think]   LLM reasoning & decision       │
 │     │      Decide: output or call tool    │
 │     ▼                                     │
-│  [Act]    执行工具（web/file/code/MCP）   │
+│  [Act]    Execute tool (web/file/code)    │
 │     │                                     │
 │     ▼                                     │
-│  [Observe] 结果注入上下文                  │
+│  [Observe] Inject result into context     │
 │     │                                     │
 │     └──→ Back to [Think]                  │
 │                                           │
-│  [Verify]  输出质量检查 → fail 则重试     │
+│  [Verify]  Output quality check           │
+│     │      Fail → retry                   │
 │     │                                     │
 │     └──→ Back to [Think]                  │
 │                                           │
@@ -35,7 +36,9 @@ User Task
 
 ## 在线演示
 
-[agent-loop.lab.jaden.tech](https://agent-loop.lab.jaden.tech) — 数据流可视化页面，点击节点查看对应源码片段。
+> 数据流可视化页面，点击节点查看对应源码片段。
+
+[agent-loop.lab.jaden.tech](https://agent-loop.lab.jaden.tech) 
 
 ## 快速开始
 
@@ -48,7 +51,7 @@ cp config.json.example config.json
 vim config.json
 
 # 执行任务
-python3 agent-loop.py "搜索长亭科技的最新动态，整理为 markdown 文档"
+python3 agent-loop.py "搜索长亭科技的最新动态 $(date +%Y%m%d)，整理为 markdown 文档"
 
 # 或从 stdin 读入
 cat task.txt | python3 agent-loop.py
