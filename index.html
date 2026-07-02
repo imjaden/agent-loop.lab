@@ -19,6 +19,82 @@
         --observe: #34d399;
         --verify: #fbbf24;
         --final: #38bdf8;
+      /* ===== Practice Mode Toggle ===== */
+      .toggle-wrap {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        margin: 12px 0;
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .toggle-wrap input[type="checkbox"] {
+        appearance: none;
+        width: 40px;
+        height: 22px;
+        background: var(--bg3);
+        border: 1px solid var(--border);
+        border-radius: 11px;
+        cursor: pointer;
+        position: relative;
+        transition: 0.3s;
+      }
+      .toggle-wrap input[type="checkbox"]:checked {
+        background: var(--think);
+        border-color: var(--think);
+      }
+      .toggle-wrap input[type="checkbox"]::after {
+        content: "";
+        position: absolute;
+        top: 2px; left: 2px;
+        width: 16px; height: 16px;
+        background: var(--text);
+        border-radius: 50%;
+        transition: 0.3s;
+      }
+      .toggle-wrap input[type="checkbox"]:checked::after {
+        left: 20px;
+        background: #fff;
+      }
+      .practice-badge {
+        display: none;
+        margin-top: 8px;
+        padding: 8px 12px;
+        background: rgba(52, 211, 153, 0.1);
+        border: 1px solid rgba(52, 211, 153, 0.3);
+        border-radius: 8px;
+        font-size: 12px;
+        color: var(--observe);
+        line-height: 1.5;
+      }
+      .practice-badge code {
+        color: var(--text);
+        background: rgba(255,255,255,0.08);
+        padding: 1px 5px;
+        border-radius: 3px;
+        font-size: 11px;
+      }
+      .practice-badge a {
+        color: var(--entry);
+        text-decoration: none;
+      }
+      .practice-badge a:hover {
+        text-decoration: underline;
+      }
+      .show-practice .practice-badge {
+        display: block;
+      }
+      .gh-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+      }
+      .gh-link::before {
+        content: "97";
+        font-size: 10px;
+      }
+
       }
       body {
         background: var(--bg);
@@ -339,12 +415,17 @@
       <header>
         <h1>Agent Loop · 数据流可视化</h1>
       </header>
+      <div class="toggle-wrap">
+        <span>Theory</span>
+        <input type="checkbox" id="practiceToggle" />
+        <span>Practice (llm-radar)</span>
+      </div>
 
       <!-- 数据流图 -->
       <div class="shutter" id="flowView">
         <div class="flow">
           <div class="fnode n-entry" onclick="showSrc('entry')">
-            <div class="title"><span class="badge">ENTRY</span>🚪 main — CLI 入口</div>
+            <div class="title"><span class="badge">ENTRY</span><div class="practice-badge">llm-radar: <code>main()</code> in <code>llm-radar-collector.py</code> — <code>run()</code> CLI dispatch</div>🚪 main — CLI 入口</div>
             <div class="desc">参数解析 → 环境变量 → Agent 构建 → 任务输入</div>
             <div class="hint">👆 源码</div>
           </div>
@@ -355,7 +436,7 @@
           </div>
 
           <div class="fnode n-think" onclick="showSrc('think')">
-            <div class="title"><span class="badge">THINK</span>🤔 LLM 推理</div>
+            <div class="title"><span class="badge">THINK</span><div class="practice-badge">llm-radar: <code>_think()</code> checks interval >=6h, source degradation >=3 auto-skip<br><a class="gh-link" href="https://github.com/imjaden/llm-radar.lab/blob/main/llm-radar-collector.py#L872">llm-radar-collector.py:872</a></div>🤔 LLM 推理</div>
             <div class="desc">上下文 → LLM.chat → 返回 tool_calls 或直接答案</div>
             <div class="hint">👆 源码</div>
           </div>
@@ -374,7 +455,7 @@
           </div>
 
           <div class="fnode n-act" onclick="showSrc('act')" style="margin-top: -8px;">
-            <div class="title"><span class="badge">ACT</span>🛠 工具执行</div>
+            <div class="title"><span class="badge">ACT</span><div class="practice-badge">llm-radar: <code>fetch_all()</code> — Selenium 6 sources, <code>extract_entities()</code> — DeepSeek ~45 entities<br><a class="gh-link" href="https://github.com/imjaden/llm-radar.lab/blob/main/llm-radar-collector.py#L412">llm-radar-collector.py:412</a></div>🛠 工具执行</div>
             <div class="desc">遍历 tool_calls → ToolBase.execute → 捕获结果</div>
             <div class="hint">👆 源码</div>
           </div>
@@ -385,7 +466,7 @@
           </div>
 
           <div class="fnode n-observe" onclick="showSrc('observe')">
-            <div class="title"><span class="badge">OBSERVE</span>👀 观察结果</div>
+            <div class="title"><span class="badge">OBSERVE</span><div class="practice-badge">llm-radar: <code>_observe()</code> — metrics.json source health, <code>merge_entities()</code> — snapshot.json dedup<br><a class="gh-link" href="https://github.com/imjaden/llm-radar.lab/blob/main/llm-radar-collector.py#L935">llm-radar-collector.py:935</a></div>👀 观察结果</div>
             <div class="desc">role:tool 消息追加 → 下轮 Think 可见</div>
             <div class="hint">👆 源码</div>
           </div>
@@ -397,7 +478,7 @@
           <div class="loop-note">⬆ Think → Act → Observe → Think ⬆</div>
 
           <div class="fnode n-verify" onclick="showSrc('verify')">
-            <div class="title"><span class="badge">VERIFY</span>🔍 质量验证</div>
+            <div class="title"><span class="badge">VERIFY</span><div class="practice-badge">llm-radar: <code>_verify()</code> — freshness <7d, hotspots >=3, else skip auto-push<br><a class="gh-link" href="https://github.com/imjaden/llm-radar.lab/blob/main/llm-radar-collector.py#L906">llm-radar-collector.py:906</a></div>🔍 质量验证</div>
             <div class="desc">Verifier 检查 → fail 则注入反馈重试</div>
             <div class="hint">👆 源码</div>
           </div>
@@ -408,7 +489,7 @@
           </div>
 
           <div class="fnode n-final" onclick="showSrc('final')">
-            <div class="title"><span class="badge">DONE</span>✅ 最终输出</div>
+            <div class="title"><span class="badge">DONE</span><div class="practice-badge">llm-radar: data persisted to <code>snapshot.json</code>, auto-push to GitHub. Test suite: 19 pytest cases<br><a class="gh-link" href="https://llm-radar.lab.jaden.tech">llm-radar.lab.jaden.tech</a></div>✅ 最终输出</div>
             <div class="desc">返回结果 + 状态持久化 + 控制台输出</div>
             <div class="hint">👆 源码</div>
           </div>
@@ -597,6 +678,9 @@ self.state.save()
     <script>
       const f = document.getElementById('flowView');
       const s = document.getElementById('sourceView');
+      document.getElementById('practiceToggle').addEventListener('change', function() {
+        document.body.classList.toggle('show-practice', this.checked);
+      });
       let x;
       function showSrc(id) {
         document.querySelectorAll('.panel').forEach((p) => (p.style.display = 'none'));
