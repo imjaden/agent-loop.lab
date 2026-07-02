@@ -1,3 +1,4 @@
 __pycache__/
-reports/*.md
 *.json
+node_modules/
+reports/*.md

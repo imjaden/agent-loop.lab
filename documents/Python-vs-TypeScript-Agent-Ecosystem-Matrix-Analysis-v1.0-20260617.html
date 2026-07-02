@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Python vs TypeScript · Agent 生态矩阵</title>
+<style>
+  :root {
+    --bg: #0b0e1a; --bg2: #111827; --bg3: #1a1f35; --bg4: #222b45;
+    --text: #e0e6f0; --muted: #5a6380; --border: #2a3050;
+    --ts: #3178c6; --ts-bg: rgba(49,120,198,0.15);
+    --py: #3776ab; --py-bg: rgba(55,118,171,0.15);
+    --both: #a78bfa; --both-bg: rgba(167,139,250,0.15);
+    --win-ts: #34d399; --win-py: #fbbf24; --draw: #c084fc;
+    --accent: #60a5fa;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: 'SF Pro', 'PingFang SC', -apple-system, sans-serif;
+    padding: 20px; min-height: 100vh;
+  }
+  .header { display: none; }
+  .tabs {
+    display: flex; gap: 2px; margin-bottom: 24px;
+    border-bottom: 1px solid var(--border); justify-content: center;
+  }
+  .tab {
+    padding: 10px 22px; cursor: pointer; font-size: 13px; font-weight: 600;
+    color: var(--muted); border-bottom: 2px solid transparent;
+    transition: all 0.2s; user-select: none;
+  }
+  .tab:hover { color: var(--text); background: var(--bg2); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab .badge { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 8px; margin-left: 6px; vertical-align: middle; }
+  .layer-desc { text-align: center; font-size: 12px; color: var(--muted); margin-bottom: 20px; line-height: 1.6; }
+  .grid { display: flex; flex-direction: column; gap: 10px; max-width: 1100px; margin: 0 auto; }
+  .card {
+    background: var(--bg2); border-radius: 10px; border: 1px solid var(--border);
+    overflow: hidden; transition: all 0.2s;
+  }
+  .card-header {
+    display: flex; align-items: center; padding: 12px 16px; cursor: pointer; gap: 12px; transition: background 0.15s;
+  }
+  .card-header:hover { background: var(--bg3); }
+  .card-index { width: 24px; height: 24px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0; }
+  .card-label { flex: 1; font-size: 14px; font-weight: 600; }
+  .card-tag { font-size: 10px; padding: 2px 8px; border-radius: 4px; font-weight: 600; white-space: nowrap; }
+  .card-arrow { font-size: 14px; color: var(--muted); transition: transform 0.2s; }
+  .card.open .card-arrow { transform: rotate(90deg); }
+  .card-body { max-height: 0; overflow: hidden; transition: max-height 0.4s ease, padding 0.3s; padding: 0 16px; }
+  .card.open .card-body { max-height: 4000px; padding: 0 16px 16px; border-top: 1px solid var(--border); }
+  .card-body table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 10px; }
+  .card-body th, .card-body td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .card-body th { font-weight: 600; color: var(--muted); font-size: 11px; letter-spacing: 0.5px; }
+  .card-body tr:last-child td { border-bottom: none; }
+  .card-body a { color: var(--accent); text-decoration: none; border-bottom: 1px dotted rgba(96,165,250,0.3); }
+  .card-body a:hover { border-bottom-color: var(--accent); }
+  .tag-ts { background: var(--ts-bg); color: var(--ts); }
+  .tag-py { background: var(--py-bg); color: var(--py); }
+  .tag-both { background: var(--both-bg); color: var(--both); }
+  .tag-win-ts { background: rgba(52,211,153,0.15); color: var(--win-ts); }
+  .tag-win-py { background: rgba(251,191,36,0.15); color: var(--win-py); }
+  .tag-draw { background: rgba(192,132,252,0.15); color: var(--draw); }
+  .footer { text-align: center; margin-top: 30px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 11px; color: var(--muted); }
+  @media (max-width: 640px) { body { padding: 12px; } .tab { padding: 8px 12px; font-size: 12px; } .card-header { flex-wrap: wrap; } }
+
+  /* Timeline */
+  .tl { position: relative; padding-left: 16px; }
+  .tl::before { content: ''; position: absolute; left: 4px; top: 4px; bottom: 4px; width: 2px; background: var(--border); }
+  .tl-item { position: relative; padding: 6px 0 6px 16px; font-size: 12px; line-height: 1.5; }
+  .tl-item::before { content: ''; position: absolute; left: -11px; top: 10px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+  .tl-year { font-weight: 700; color: var(--accent); font-size: 11px; }
+  .tl-lang { font-size: 10px; padding: 1px 5px; border-radius: 3px; margin-left: 4px; }
+
+  /* Unified history table */
+  .hist-wrap { overflow-x: auto; margin-top: 10px; }
+  .hist-table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 900px; }
+  .hist-table th, .hist-table td { padding: 6px 8px; border: 1px solid var(--border); vertical-align: top; text-align: left; }
+  .hist-table thead th { background: var(--bg3); color: var(--muted); font-weight: 600; font-size: 12px; position: sticky; top: 0; z-index: 1; }
+  .hist-table .row-time { background: var(--bg3); color: var(--accent); font-weight: 700; font-size: 12px; white-space: nowrap; width: 60px; }
+  .hist-cell { min-height: 28px; line-height: 1.4; padding: 2px 0; }
+  .hist-cell .proj { font-weight: 600; }
+  .hist-cell .lang-tag { font-size: 10px; padding: 1px 4px; border-radius: 2px; margin-left: 2px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Python vs TypeScript · Agent 生态矩阵</h1>
+  <div class="sub">7 个战场 × 4 层深度 · 数据截至 <em>2026.06</em></div>
+</div>
+
+<div class="tabs" id="tabs">
+  <div class="tab active" data-layer="0">📜 发展史 <span class="badge tag-win-ts">背景·问题</span></div>
+  <div class="tab" data-layer="1">⚖️ 特性对比 <span class="badge tag-ts">TS</span> vs <span class="badge tag-py">PY</span></div>
+  <div class="tab" data-layer="2">⚔️ 侵蚀案例 <span class="badge tag-draw">相互渗透</span></div>
+  <div class="tab" data-layer="3">🔮 趋势研判 <span class="badge tag-win-ts">格局</span></div>
+</div>
+
+<div class="layer-desc" id="layerDesc">各战场诞生的背景、解决了哪些问题、关键里程碑</div>
+<div class="grid" id="matrix"></div>
+
+<div class="footer">Python vs TypeScript in Agent Ecosystem · 7 Battlefields × 4 Depth Layers · IRIS 2026</div>
+
+<script>
+// ─── GitHub link mapping ───
+const GH = {
+  LangChain: 'https://github.com/langchain-ai/langchain',
+  'LangChain.js': 'https://github.com/langchain-ai/langchain-js',
+  CrewAI: 'https://github.com/joaomdmoura/crewai',
+  'Vercel AI SDK': 'https://github.com/vercel/ai',
+  Mastra: 'https://github.com/mastra-ai/mastra',
+  'OpenAI Agents SDK': 'https://github.com/openai/openai-agents-python',
+  PydanticAI: 'https://github.com/pydantic/pydantic-ai',
+  Pydantic: 'https://github.com/pydantic/pydantic',
+  Instructor: 'https://github.com/instructor-ai/instructor',
+  Zod: 'https://github.com/colinhacks/zod',
+  Textual: 'https://github.com/textualize/textual',
+  Rich: 'https://github.com/textualize/rich',
+  Ink: 'https://github.com/vadimdemedes/ink',
+  Prettier: 'https://github.com/prettier/prettier',
+  ESLint: 'https://github.com/eslint/eslint',
+  Biome: 'https://github.com/biomejs/biome',
+  'esbuild': 'https://github.com/evanw/esbuild',
+  'tsup': 'https://github.com/egoist/tsup',
+  vLLM: 'https://github.com/vllm-project/vllm',
+  TGI: 'https://github.com/huggingface/text-generation-inference',
+  Ollama: 'https://github.com/ollama/ollama',
+  PyTorch: 'https://github.com/pytorch/pytorch',
+  NumPy: 'https://github.com/numpy/numpy',
+  Jupyter: 'https://github.com/jupyter/notebook',
+  'HF Transformers': 'https://github.com/huggingface/transformers',
+  'BentoML': 'https://github.com/bentoml/BentoML',
+  LlamaIndex: 'https://github.com/run-llama/llama_index',
+  Vitest: 'https://github.com/vitest-dev/vitest',
+  TypeDoc: 'https://github.com/TypeStrong/typedoc',
+  tsx: 'https://github.com/privatenumber/tsx',
+  Click: 'https://github.com/pallets/click',
+  Typer: 'https://github.com/tiangolo/typer',
+  uv: 'https://github.com/astral-sh/uv',
+  Bun: 'https://github.com/oven-sh/bun',
+  'OpenTUI': 'https://github.com/sst/opentui',
+};
+const GH_NAMES = Object.keys(GH).sort((a,b)=>b.length-a.length);
+
+function linkify(text) {
+  let result = text;
+  for (const name of GH_NAMES) {
+    const re = new RegExp('\\b' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'g');
+    result = result.replace(re, `<a href="${GH[name]}" target="_blank" rel="noopener">${name}</a>`);
+  }
+  return result;
+}
+
+// ─── DATA ───
+const KEYS = ['a','b','c','d','e','f','g'];
+const LABELS = { a:'Agent Framework', b:'LLM Toolchain', c:'CLI 开发者工具', d:'TUI 终端界面', e:'数据科学 / ML', f:'工具链 / 构建系统', g:'推理部署/基础设施' };
+const ICONS = { a:'🤖', b:'🔧', c:'💻', d:'🖥️', e:'📊', f:'🏗️', g:'🚀' };
+const IDX = 'ABCDEFG';
+
+// Layer 0: unified history table
+const HIST_COLS = ['时间','🤖 Agent Framework','🔧 LLM Toolchain','💻 CLI 开发者工具','🖥️ TUI 终端界面','📊 数据科学 / ML','🏗️ 工具链 / 构建系统','🚀 推理部署/基础设施'];
+const HIST_DATA = [
+  { t:'2006', cells:['—','—','—','—',`${linkify('NumPy')} 发布<br><span class="lang-tag tag-py">Python</span>`,'—','—'] },
+  { t:'2014', cells:['—','—','—','—',`${linkify('Jupyter')} Notebook<br><span class="lang-tag tag-py">Python</span>`,'—','—'] },
+  { t:'2015+', cells:['—','—',`${linkify('Prettier')} / ${linkify('ESLint')}<br><span class="lang-tag tag-ts">TS</span>`,'—','—','—','—'] },
+  { t:'2018', cells:['—','—','—','—',`${linkify('PyTorch')} / TensorFlow<br><span class="lang-tag tag-py">Python</span>`,'—','—'] },
+  { t:'2019', cells:['—',`${linkify('Pydantic')} V1<br><span class="lang-tag tag-py">Python</span>`,'—','—',`${linkify('HF Transformers')}<br><span class="lang-tag tag-py">Python</span>`,'—','—'] },
+  { t:'2020', cells:['—','—','—','—','—',`${linkify('esbuild')} 发布<br><span class="lang-tag tag-ts">Go+TS</span>`,'—'] },
+  { t:'2021', cells:['—','—','—',`${linkify('Rich')} 发布<br><span class="lang-tag tag-py">Python</span>`,'—','—','—'] },
+  { t:'2022', cells:[`${linkify('LangChain')} 发布<br><span class="lang-tag tag-py">Python</span>`,'—',`${linkify('Click')} / ${linkify('Typer')}<br><span class="lang-tag tag-py">Python</span>`,`${linkify('Textual')}+${linkify('Ink')}<br><span class="lang-tag tag-both">PY+TS</span>`,`${linkify('PyTorch')} 2.0<br><span class="lang-tag tag-py">Python</span>`,`${linkify('tsup')} 发布<br><span class="lang-tag tag-ts">TS</span>`,`${linkify('vLLM')} PagedAttention<br><span class="lang-tag tag-py">Python</span>`] },
+  { t:'2023 Q1', cells:[`${linkify('LangChain.js')}<br><span class="lang-tag tag-ts">TS</span>`,'OpenAI Function Calling<br><span class="lang-tag tag-py">Python</span>','—','—','—','—',`${linkify('TGI')}+${linkify('Ollama')}<br><span class="lang-tag tag-py">Python</span>`] },
+  { t:'2023 Q2', cells:[`${linkify('CrewAI')} 发布<br><span class="lang-tag tag-py">Python</span>`, `${linkify('Instructor')} 发布<br><span class="lang-tag tag-py">Python</span>`,'—','—','—','—','—'] },
+  { t:'2023 Q3', cells:[`${linkify('Vercel AI SDK')} 1.0<br><span class="lang-tag tag-ts">TS</span>`,'—','npx 零安装模式','—','—','—','—'] },
+  { t:'2024', cells:[`OpenAI Agents SDK<br>${linkify('PydanticAI')}<br><span class="lang-tag tag-py">Python</span>`, `${linkify('Zod')}成标配+Structured Outputs<br><span class="lang-tag tag-ts">TS</span>`,'—',`Ink 被 Hermes/Cursor 采用<br><span class="lang-tag tag-ts">TS</span>`,'—',`${linkify('Biome')} 发布<br><span class="lang-tag tag-ts">Rust+TS</span>`,`${linkify('vLLM')} #1 开源项目`] },
+  { t:'2025', cells:[`${linkify('Mastra')} 发布<br>${linkify('Vercel AI SDK')} 4.0<br><span class="lang-tag tag-ts">TS</span>`, `${linkify('Instructor')} TS<br>${linkify('PydanticAI')}<br><span class="lang-tag tag-both">双语言</span>`,`${linkify('Biome')}/${linkify('tsx')}<br><span class="lang-tag tag-ts">TS</span>`,'Textualize 公司关停<br><span class="lang-tag tag-py">Python</span>','Jupyter 2.42M (+75%)<br><span class="lang-tag tag-py">Python</span>',`${linkify('uv')} (Rust pip)<br><span class="lang-tag tag-py">Python</span>`,`${linkify('TGI')} v3.0<br><span class="lang-tag tag-py">Python</span>`] },
+];
+
+// Layers 1-3: per-battlefield data
+const LAYER_DATA = [
+  // Layer 1: 特性对比
+  {
+    desc: '分发体验、类型安全、异步模型、生态成熟度、社区活跃度横向对比',
+    data: {
+      a: { tag:'tag-both', tagText:'各有优势', summary:'Python 框架多(134K⭐) · TS 增速快(2.8M/wk)',
+        detail:[
+          ['','Python','TypeScript'],
+          ['框架数量','LangChain 134K⭐, CrewAI 49K⭐, PydanticAI 15K⭐','Vercel AI SDK 2.8M/wk, Mastra 19K⭐'],
+          ['下载量','pip 波动大','2.8M downloads/wk (Vercel AI SDK)'],
+          ['流式支持','SSE / Async Generator','原生 React Server Components + Edge'],
+          ['类型安全','mypy/Pyright 可选','编译期保证 + Zod 原生'],
+          ['MCP 支持','LangChain 有 adapter','Mastra 内置, Vercel AI SDK 支持'],
+          ['部署集成','自配 FastAPI','Vercel Edge Functions 一键部署'],
+      ]},
+      b: { tag:'tag-ts', tagText:'TS 略优', summary:'Python Pydantic 生态深 · TS Zod + Vercel AI SDK 集成更紧',
+        detail:[
+          ['','Python','TypeScript'],
+          ['核心引擎','Pydantic → JSON Schema','Zod → JSON Schema'],
+          ['运行时校验','Pydantic 强运行时校验','Zod 运行时+编译期双重校验'],
+          ['LLM 集成','Instructor 自动 retry+validation','Vercel AI SDK 原生 Zod schema'],
+          ['生态地位','Python AI 生态基础组件','TS AI 生态基础组件'],
+      ]},
+      c: { tag:'tag-ts', tagText:'TS 碾压', summary:'npx 零安装 > pip install+venv · esbuild 打包 5MB < PyInstaller 30MB',
+        detail:[
+          ['','Python','TypeScript'],
+          ['前置条件','需 Python + pip + venv','前端开发者已有 Node.js'],
+          ['即用体验','pip install + 虚拟环境管理','npx xxx 零安装'],
+          ['冷启动速度','100-300ms','50-100ms'],
+          ['单文件分发','PyInstaller ≥ 30MB','esbuild/tsup ≤ 5MB'],
+          ['系统调用','os/subprocess 原生优势','child_process 封装'],
+      ]},
+      d: { tag:'tag-ts', tagText:'TS 领先', summary:'会 React 就会 Ink · Textual 需学专属 CSS · 公司已关停',
+        detail:[
+          ['','Python (Textual)','TypeScript (Ink)'],
+          ['渲染方式','自研 CSS 渲染引擎','React VDOM → 终端'],
+          ['组件模型','Widget + CSS 文件','React 组件复用前端经验'],
+          ['社区状态','社区维护（2025.5 公司关停）','活跃，产品级采用'],
+          ['学习成本','学 Textual CSS','会 React 就会 Ink'],
+          ['商业可持续','❌ 公司关停','✅ React 生态支撑'],
+      ]},
+      e: { tag:'tag-py', tagText:'Python 垄断', summary:'CUDA/PyTorch 绑定 · Jupyter 2.42M 仓库 · TS 零训练能力',
+        detail:[
+          ['','Python','TypeScript'],
+          ['GPU/CUDA','原生 PyTorch 2.0','无（ONNX.js 仅推理）'],
+          ['训练生态','PyTorch / JAX / HF','❌ 无训练能力'],
+          ['数据处理','pandas / polars','Danfo.js（生态极小）'],
+          ['Notebook','Jupyter 2.42M 仓库 (+75%)','Observable（非 ML）'],
+          ['学术/论文','90%+ Nature 论文用 Python','接近 0%'],
+      ]},
+      f: { tag:'tag-ts', tagText:'TS 碾压', summary:'esbuild 毫秒级 vs setuptools 秒级 · tree-shaking 原生 vs 不支持',
+        detail:[
+          ['','Python','TypeScript'],
+          ['构建速度','setuptools 秒级','esbuild 毫秒级 (10-100x)'],
+          ['单文件','PyInstaller ≥ 30MB','esbuild/tsup ≤ 5MB'],
+          ['tree-shaking','❌ 不支持','✅ 原生'],
+          ['锁文件','poetry.lock','package-lock.json（成熟）'],
+          ['workspace','有限','pnpm workspace 原生'],
+      ]},
+      g: { tag:'tag-py', tagText:'Python 垄断', summary:'vLLM 100K+⭐ · TGI v3.0 · TS 无原生推理引擎',
+        detail:[
+          ['','Python','TypeScript'],
+          ['CUDA 绑定','原生（PyTorch C++）','❌ 无'],
+          ['推理引擎','vLLM 100K+⭐, TGI','❌ 无原生引擎'],
+          ['量化支持','AWQ/GPTQ/GGUF','llama.cpp node 绑定（有性能损失）'],
+          ['批处理','Continuous batching 原生','❌'],
+          ['GPU 调度','CUDA / ROCm','❌'],
+      ]},
+    }
+  },
+  // Layer 2: 侵蚀案例
+  {
+    desc: 'Python ↔ TypeScript 互相"侵蚀"对方的典型场景和案例',
+    data: {
+      a: { tag:'tag-draw', tagText:'双向侵蚀', summary:'Vercel AI SDK 侵蚀 LangChain.js 市场 · OpenAI Agents SDK 同时维护双语言',
+        detail:[
+          ['TS→PY','Vercel AI SDK 抢 LangChain JS 市场','2.8M vs 795K/wk, 新项目首选 TS'],
+          ['TS→PY','Mastra 从零崛起 19K⭐','TS-native, PydanticAI 只有 Python 版'],
+          ['PY→TS','OpenAI Agents SDK 扩展到 TS','官方双重维护, TS 128K/wk'],
+          ['双向','LangChain 维护 Python+JS 两套','API 不对称, JS 版慢半拍'],
+      ]},
+      b: { tag:'tag-ts', tagText:'TS→PY', summary:'Zod 侵蚀 Pydantic 在新项目的位置 · OpenAI TS SDK 内置结构化输出',
+        detail:[
+          ['TS→PY','Zod 替代 Pydantic','Vercel AI SDK 选 Zod, 新 TS 项目不碰 Pydantic'],
+          ['TS→PY','OpenAI TS SDK 原生 Zod schema','不需 Instructor 中间层'],
+          ['PY→TS','Instructor Python→TS 移植','但 TS 原生 SDK 已内置, 增量价值小'],
+      ]},
+      c: { tag:'tag-ts', tagText:'TS 全面侵蚀', summary:'Prettier→autopep8 · ESLint→pylint · npx→pip · Biome→black',
+        detail:[
+          ['TS→PY','Prettier 替代 autopep8/black','npx prettier 零安装, 统一前端生态'],
+          ['TS→PY','ESLint 替代 pyflakes/pylint','插件生态远超 Python 静态检查'],
+          ['TS→PY','Vitest 替代 pytest','HMR 热更新, Node 集成'],
+          ['TS→PY','tsup/esbuild 替代 setuptools/poetry','打包 10-100x, 输出单文件'],
+          ['TS→PY','TypeDoc 替代 Sphinx','React 组件驱动文档'],
+          ['TS→PY','tsx 替代 python script.py','npx tsx 零安装执行'],
+      ]},
+      d: { tag:'tag-ts', tagText:'TS 侵蚀', summary:'Textual 公司关停 · Ink 成为 TUI 默认选择 · SST 转向 OpenTUI',
+        detail:[
+          ['TS→PY','Hermes Agent TUI 用 Ink+React','替代 Python TUI 方案'],
+          ['TS→PY','OpenAI Codex CLI 用 Ink','终端交互界面全部 TS'],
+          ['TS→PY','Cursor 终端组件用 Ink','IDE 终端渲染'],
+          ['TS→PY','SST 转向 OpenTUI (Zig+TS)','替代 Textual'],
+      ]},
+      e: { tag:'tag-py', tagText:'无侵蚀', summary:'Python 绝对垄断 · TS 仅浏览器推理有极轻尝试',
+        detail:[
+          ['PY→TS','TensorFlow.js','仅浏览器推理, 无法训练'],
+          ['PY→TS','ONNX Runtime Web','推理选项之一, 但 vLLM/TGI 用 Python'],
+          ['TS→PY','TypeScript 几乎无法渗透','CUDA/PyTorch 绑定在 Python/C++ 层'],
+      ]},
+      f: { tag:'tag-ts', tagText:'TS 全面侵蚀', summary:'esbuild→setuptools · Vitest→pytest · Biome→flake8+black',
+        detail:[
+          ['TS→PY','esbuild → make/setuptools','Go 底层+JS 封装, 性能碾压'],
+          ['TS→PY','Vitest → pytest','HMR + 原生 TS 支持'],
+          ['TS→PY','TypeDoc → Sphinx','TS 源码→文档自动生成'],
+          ['TS→PY','Biome → flake8/black','Rust 编写, 统一 Format+Lint'],
+      ]},
+      g: { tag:'tag-py', tagText:'Python 主导', summary:'vLLM/TGI 不可替代 · Ollama 上层 Go 下层 C++',
+        detail:[
+          ['PY→TS','Ollama 用 Go 写','但底层仍调用 llama.cpp (C++)'],
+          ['TS→PY','BentoML 提供 TS 接口','编排层 TS, 推理层 Python'],
+          ['PY→TS','ONNX Runtime Web','仅浏览器, 无法与 vLLM 竞争'],
+      ]},
+    }
+  },
+  // Layer 3: 趋势研判
+  {
+    desc: '收敛还是分化？各自守住哪些阵地？对选型者的启示',
+    data: {
+      a: { tag:'tag-draw', tagText:'收敛', summary:'TS 增速 > Python · Python 保留存量 LangChain 134K⭐ · 双语言并行成常态',
+        detail:[
+          ['TS胜','新项目首选 TS-native 框架','Vercel AI SDK 2.8M/wk, Mastra 19K⭐'],
+          ['PY守','LangChain 134K⭐ 短期不可替代','存量市场大'],
+          ['并行','OpenAI/LangChain 都维护两套','未来模式：MCP 协议 + 多层绑定'],
+      ]},
+      b: { tag:'tag-ts', tagText:'TS 胜出', summary:'结构化输出走向 API 层标准化 · Zod 成 TS 生态默认',
+        detail:[
+          ['TS胜','Vercel AI SDK + Zod = 事实标准','新 TS 项目默认选型'],
+          ['PY守','PydanticAI 是 Python 侧护城河','从数据校验 → AI 应用框架'],
+          ['趋势','结构化输出 API 层标准化','OpenAI/Anthropic 原生支持, 中间库价值下降'],
+      ]},
+      c: { tag:'tag-ts', tagText:'TS 持续扩张', summary:'CLI 工具全面 TS 化 · Python 仅剩系统调用护城河',
+        detail:[
+          ['TS胜','npx 零安装 = 新 CLI 标配','不会逆转的体验优势'],
+          ['PY守','系统调用密集（lsof/os.killpg）','macOS/Linux 预装 Python 仍有优势'],
+          ['启示','无系统调用的纯逻辑 CLI 选 TS','有系统调用的选 Python'],
+      ]},
+      d: { tag:'tag-ts', tagText:'TS 主导', summary:'Textual 关停是标志性事件 · React 生态规模效应凸显',
+        detail:[
+          ['TS胜','Ink + React = 当前 TUI 默认选型','会 React 就会写 TUI'],
+          ['新兴','OpenTUI (Zig+TS)','SST 团队推动, 目标超越 Ink 性能'],
+          ['启示','TUI 选 TypeScript React','Python TUI 缺乏商业支撑'],
+      ]},
+      e: { tag:'tag-py', tagText:'Python 绝对稳定', summary:'CUDA/C++ 生态绑定不可替代 · TS 无进入窗口',
+        detail:[
+          ['PY胜','GPU/CUDA/C++ 层绑定','不是语言之争, 是基础设施层绑定'],
+          ['PY胜','学术/论文/Notebook 标准化','Nature 论文 90%+ 用 Python'],
+          ['局限','TS 仅浏览器推理','无法构成实质威胁'],
+      ]},
+      f: { tag:'tag-ts', tagText:'TS 主导', summary:'esbuild/tsup 技术优势不可逆 · Python 在追赶',
+        detail:[
+          ['TS胜','esbuild/tsup 技术优势不可逆','Rust/Go + JS = 最佳组合'],
+          ['PY追','uv (Rust pip) 2025','Python 追了 5 年差距'],
+          ['启示','构建工具链优先选 TS','Python 工具链体验是开发者外流原因之一'],
+      ]},
+      g: { tag:'tag-py', tagText:'Python 绝对稳定', summary:'vLLM/TGI 绑定 CUDA · TS 无推理层',
+        detail:[
+          ['PY胜','vLLM 100K+⭐, TGI 3.0','CUDA/PyTorch 绑定不可替代'],
+          ['TS角色','仅前端/编排层封装','下层引擎无法替代'],
+          ['借鉴','Ollama 模式：上层 API + 下层 C++','TS 可以学习此分层模式'],
+      ]},
+    }
+  }
+];
+
+let activeLayer = 0;
+
+function render() {
+  const grid = document.getElementById('matrix');
+  const tabs = document.querySelectorAll('.tab');
+  const desc = document.getElementById('layerDesc');
+  tabs.forEach((t,i) => t.classList.toggle('active', i===activeLayer));
+  grid.innerHTML = '';
+
+  if (activeLayer === 0) {
+    // ── Layer 0: Unified history table ──
+    desc.textContent = '各战场跨年代发展全貌·点击项目名查看 GitHub';
+    const wrap = document.createElement('div');
+    wrap.className = 'hist-wrap';
+    let html = `<table class="hist-table"><thead><tr>`;
+    HIST_COLS.forEach(c => html += `<th>${c}</th>`);
+    html += `</tr></thead><tbody>`;
+    HIST_DATA.forEach(row => {
+      html += `<tr><td class="row-time">${row.t}</td>`;
+      row.cells.forEach(cell => {
+        html += `<td><div class="hist-cell">${cell || '—'}</div></td>`;
+      });
+      html += `</tr>`;
+    });
+    html += `</tbody></table>`;
+    wrap.innerHTML = html;
+    grid.appendChild(wrap);
+
+  } else {
+    // ── Layers 1-3: per-battlefield cards ──
+    const layer = LAYER_DATA[activeLayer - 1];
+    desc.textContent = layer.desc;
+
+    KEYS.forEach((key, idx) => {
+      const item = layer.data[key];
+      if (!item) return;
+      const summary = item.summary || '';
+      let detailHTML = '';
+
+      if (item.detail && item.detail.length > 0 && item.detail[0][0] === '') {
+        // Comparison table (PY vs TS)
+        const rows = item.detail.slice(1);
+        detailHTML = `<table><tr><th>维度</th><th>🐍 Python</th><th>📘 TypeScript</th></tr>`;
+        rows.forEach(r => detailHTML += `<tr><td><strong>${linkify(r[0])}</strong></td><td>${linkify(r[1])}</td><td>${linkify(r[2])}</td></tr>`);
+        detailHTML += '</table>';
+      } else if (activeLayer === 2) {
+        // Erosion cases
+        detailHTML = `<table><tr><th>方向</th><th>案例</th><th>说明</th></tr>`;
+        item.detail.forEach(r => {
+          const dir = r[0].includes('→') ? (r[0].startsWith('TS')?'tag-ts':r[0].startsWith('PY')?'tag-py':'tag-both') : 'tag-draw';
+          detailHTML += `<tr><td><span class="${dir}" style="padding:2px 6px;border-radius:3px;font-size:11px">${r[0]}</span></td><td><strong>${linkify(r[1])}</strong></td><td>${linkify(r[2])}</td></tr>`;
+        });
+        detailHTML += '</table>';
+      } else {
+        // Trends
+        detailHTML = `<table><tr><th>判断</th><th>结论</th><th>依据</th></tr>`;
+        item.detail.forEach(r => {
+          const cls = r[0].includes('胜') ? 'tag-win-ts' : r[0].includes('守')||r[0].includes('定') ? 'tag-win-py' : 'tag-both';
+          detailHTML += `<tr><td><span class="${cls}" style="padding:2px 6px;border-radius:3px;font-size:11px">${r[0]}</span></td><td><strong>${linkify(r[1])}</strong></td><td>${linkify(r[2])}</td></tr>`;
+        });
+        detailHTML += '</table>';
+      }
+
+      const card = document.createElement('div');
+      card.className = 'card open';
+      card.innerHTML = `
+        <div class="card-header" onclick="toggleCard(this)">
+          <div class="card-index" style="background:var(--bg4)">${IDX[idx]}</div>
+          <div class="card-label">${ICONS[key]} ${LABELS[key]}</div>
+          <span class="card-tag ${item.tag}">${item.tagText}</span>
+          <span class="card-arrow">▶</span>
+        </div>
+        <div class="card-body">
+          <div style="font-size:13px;font-weight:600;color:var(--accent);margin:8px 0 4px">${summary}</div>
+          ${detailHTML}
+        </div>`;
+      grid.appendChild(card);
+    });
+  }
+}
+
+function toggleCard(header) {
+  header.parentElement.classList.toggle('open');
+}
+
+document.getElementById('tabs').addEventListener('click', (e) => {
+  const tab = e.target.closest('.tab');
+  if (!tab) return;
+  activeLayer = parseInt(tab.dataset.layer);
+  render();
+});
+
+render();
+</script>
+</body>
+</html>

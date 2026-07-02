@@ -8,5 +8,16 @@
   "checkpoint": "",
   "max_iter": 10,
   "max_duration": 600,
-  "verbose": true
+  "verbose": true,
+  "mcp_servers": {
+    "llm-radar": {
+      "command": "python3",
+      "args": [
+        "~/CodeSpace/llm-radar.jaden.tech/llm-radar-mcp-server.py"
+      ],
+      "env": {
+        "LLM_RADAR_MCP_KEY": "llm-radar-mcp-2026"
+      }
+    }
+  }
 }

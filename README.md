@@ -9,29 +9,25 @@
 ## 设计理念
 
 ```
-User Task
-   │
-   ▼
-┌───────────────────────────────────────────┐
-│  Agent Loop                               │
-│                                           │
-│  [Think]   LLM reasoning & decision       │
-│     │      Decide: output or call tool    │
-│     ▼                                     │
-│  [Act]    Execute tool (web/file/code)    │
-│     │                                     │
-│     ▼                                     │
-│  [Observe] Inject result into context     │
-│     │                                     │
-│     └──→ Back to [Think]                  │
-│                                           │
-│  [Verify]  Output quality check           │
-│     │      Fail → retry                   │
-│     │                                     │
-│     └──→ Back to [Think]                  │
-│                                           │
-│  Loop until verified final answer         │
-└───────────────────────────────────────────┘
+┌─ Theory: Agent Loop ──────────────────┐  ┌─ Practice: llm-radar ─────────────────┐
+│                                       │  │                                      │
+│  [Think]  LLM reasoning & decision    │  │  _think():872 — check interval >=6h  │
+│     │     Decide tool or output       │  │  source degradation >=3 auto-skip    │
+│     ▼                                │  │                                      │
+│  [Act]   Execute tool (web/file/code) │  │  fetch_all():412 — Selenium 6 sources│
+│     │                                 │  │  extract_entities():454 — DeepSeek   │
+│     ▼                                │  │  ~45 entities / run                  │
+│  [Observe] Inject result into context │  │  _observe():935 — metrics.json       │
+│     │                                 │  │  snapshot.json persistence           │
+│     └──→ Back to [Think]              │  │  merge_entities():647 — dedup/merge  │
+│                                       │  │                                      │
+│  [Verify]  Output quality check       │  │  _verify():906 — freshness < 7d     │
+│     │      Fail → retry               │  │  hotspots >= 3, else skip auto-push │
+│     │                                 │  │                                      │
+│     └──→ Back to [Think]              │  │  Crontab: 09:00 / 21:00 daily       │
+│                                       │  │                                      │
+│  Loop until verified final answer     │  │  Test suite: 19 pytest cases        │
+└───────────────────────────────────────┘  └──────────────────────────────────────┘
 ```
 
 ## 在线演示
@@ -135,10 +131,15 @@ print(agent.run("Use my_tool to ..."))
 
 ## 验证场景
 
-- 多源 web research → 文档合成
-- 代码/HTML 生成
-- 结构化知识梳理
-- 数据抓取与分析
+| 理论场景 | llm-radar 实践项目 | 代码位置 |
+|:---|:---|:---|
+| 多源 web research → 文档合成 | 7 新闻源 Selenium 抓取 → DeepSeek 提取 → merge | `fetch_all()`, `_selenium_extract()`, `merge_entities()` |
+| 代码/HTML 生成 | — | 通用，llm-radar 不涉及 |
+| 结构化知识梳理 | 5 维度实体（厂商/人物/工具/大模型/热点） | `extract_entities()`, `_parse_json_output()` |
+| 数据抓取与分析 | 每日 9:00/21:00 自动采集 → 质量门禁 → auto-push | `run()`, `_verify()`, `_auto_push()` |
+| 工具即插即用 | MCP Server 工具注册 | `mcp-server.py` TOOL_REGISTRY |
+| 状态持久化 | snapshot.json + metrics.json + archive | `_save_snapshot()`, `_observe()` |
+| 错误恢复 | Selenium 重试 + 源降级 + JSON fallback | `_selenium_extract()` 2 次重试, `_try_fix_truncated_json()` |
 
 ---
 
