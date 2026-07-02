@@ -15,6 +15,96 @@ from pathlib import Path
 # ──────────────────────────────────────────────
 # 0. 辅助工具
 # ──────────────────────────────────────────────
+_HTML_TEMPLATES_DIR = os.path.expanduser("~/CodeSpace/script-miner/skills/html-templates")
+
+
+def _html_load_template(name):
+    """读取 HTML 模板并内联 style-guide.css"""
+    tmpl_path = os.path.join(_HTML_TEMPLATES_DIR, name)
+    if not os.path.exists(tmpl_path):
+        return None, f"模板不存在: {tmpl_path}"
+    with open(tmpl_path, encoding="utf-8") as f:
+        tmpl = f.read()
+    style_path = os.path.join(_HTML_TEMPLATES_DIR, "style-guide.css")
+    if os.path.exists(style_path):
+        with open(style_path, encoding="utf-8") as f:
+            css = f.read()
+        tmpl = tmpl.replace(
+            '<link rel="stylesheet" href="style-guide.css">',
+            f"<style>\n{css}\n</style>"
+        )
+    return tmpl, None
+
+
+def _html_inject(template, **kwargs):
+    """替换 <!--KEY--> 占位符"""
+    for key, value in kwargs.items():
+        template = template.replace(f"<!--{key.upper()}-->", str(value))
+    return template
+
+
+# ── 简易 Markdown → HTML（html-gen.py 的 md_to_html 内联版）──
+def _md_to_html(text):
+    import re
+    lines = text.split('\n')
+    html = []
+    i, in_code, code_buf = 0, False, []
+    while i < len(lines):
+        line = lines[i]
+        if line.startswith('```'):
+            if in_code:
+                lang = code_buf[0][3:].strip()
+                c = '\n'.join(code_buf[1:])
+                html.append(f'<pre><code class="language-{lang}">{c.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")}</code></pre>')
+                code_buf, in_code = [], False
+            else:
+                code_buf, in_code = [line], True
+            i += 1; continue
+        if in_code:
+            code_buf.append(line); i += 1; continue
+        def _slug(t):
+            return re.sub(r'[^\w\u4e00-\u9fff]+', '-', t.lower()).strip('-') or 'section'
+        if line.startswith('### '): html.append(f'<h3 id="{_slug(line[4:])}">{line[4:]}</h3>')
+        elif line.startswith('## '): html.append(f'<h2 id="{_slug(line[3:])}">{line[3:]}</h2>')
+        elif line.startswith('# '): html.append(f'<h1 id="{_slug(line[2:])}">{line[2:]}</h1>')
+        elif line.startswith('|'):
+            tbl = []
+            while i < len(lines) and '|' in lines[i] and lines[i].strip().startswith('|'):
+                tbl.append(lines[i]); i += 1
+            rows = [[c.strip() for c in r.strip().strip('|').split('|')] for r in tbl]
+            if rows:
+                bs = 2 if len(rows) > 1 and all(re.match(r'^[-:\s]+$', c) for c in rows[1]) else 1
+                h = ['<table><thead><tr>']
+                for c in rows[0]: h.append(f'<th>{c}</th>')
+                h.append('</tr></thead><tbody>')
+                for r in rows[bs:]:
+                    h.append('<tr>')
+                    for c in r: h.append(f'<td>{c}</td>')
+                    h.append('</tr>')
+                h.append('</tbody></table>')
+                html.append('\n'.join(h))
+            continue
+        elif re.match(r'^[-*] ', line): html.append(f'<li>{line[2:]}</li>')
+        elif re.match(r'^\d+\.\s', line): html.append(f'<li>{line.split(". ",1)[1]}</li>')
+        elif line.strip() == '': pass
+        else:
+            t = line
+            t = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', t)
+            t = re.sub(r'\*(.+?)\*',  r'<em>\1</em>', t)
+            t = re.sub(r'`(.+?)`',    r'<code>\1</code>', t)
+            t = re.sub(r'\[(.+?)\]\((.+?)\)', r'<a href="\2">\1</a>', t)
+            if t.strip(): html.append(f'<p>{t}</p>')
+        i += 1
+    result, in_ul = [], False
+    for h in html:
+        if h.startswith('<li>'):
+            if not in_ul: result.append('<ul>'); in_ul = True
+            result.append(h)
+        else:
+            if in_ul: result.append('</ul>'); in_ul = False
+            result.append(h)
+    if in_ul: result.append('</ul>')
+    return '\n'.join(result)
 def _load_config(path: str = "config.json") -> dict:
     """读取配置文件，不存在返回默认配置"""
     default = {
@@ -439,12 +529,99 @@ def make_tools(workdir: str = ".", config: dict = None) -> list[ToolBase]:
             out += f"\n[stderr]\n{err}"
         return out or "(no output)"
 
+    # ── HTML 生成工具（集成 skills/html-templates）──
+    def html_gen_doc(markdown: str, title: str = "报告", output: str = "report.html",
+                     subtitle: str = "", metadata: str = "") -> str:
+        """从 Markdown 生成 B型 文档 HTML（含 TOC 侧边栏/代码复制/章节高亮）"""
+        tmpl, err = _html_load_template("layout-doc.html")
+        if err:
+            return err
+        content = _md_to_html(markdown)
+        if content.startswith('<h1'):
+            idx = content.index('</h1>') + 5
+            content = content[idx:].lstrip()
+        result = _html_inject(tmpl, title=title, subtitle=subtitle,
+                              metadata=metadata, content=content)
+        full = output if output.startswith("/") else os.path.join(workdir, output)
+        os.makedirs(os.path.dirname(os.path.abspath(full)), exist_ok=True)
+        with open(full, "w", encoding="utf-8") as f:
+            f.write(result)
+        return f"✅ B型文档 HTML 已生成: {full} ({len(result)} bytes)"
+
+    def html_gen_table(data_json: str, columns_json: str = "",
+                       title: str = "数据表格", output: str = "table.html") -> str:
+        """从 JSON 数据生成 A型 数据表格 HTML（含搜索/排序/分页）
+        data_json: JSON 数组（自动从 dict 中提取 data/rows 字段）
+        columns_json: 列定义 JSON（可选，自动推导）
+        """
+        import json as _json
+        try:
+            data = _json.loads(data_json)
+        except _json.JSONDecodeError as e:
+            return f"❌ data_json 解析失败: {e}"
+        if isinstance(data, dict):
+            data = data.get('data') or data.get('rows') or list(data.values())[0]
+        columns = []
+        if columns_json:
+            try:
+                columns = _json.loads(columns_json)
+            except _json.JSONDecodeError as e:
+                return f"❌ columns_json 解析失败: {e}"
+        elif data and isinstance(data, list) and len(data) > 0:
+            columns = [{'key': k, 'label': k, 'sortable': True} for k in data[0].keys()]
+        tmpl, err = _html_load_template("layout-table.html")
+        if err:
+            return err
+        result = _html_inject(tmpl, title=title,
+                              columns=_json.dumps(columns, ensure_ascii=False),
+                              data=_json.dumps(data, ensure_ascii=False),
+                              filters='', search_placeholder='搜索...')
+        full = output if output.startswith("/") else os.path.join(workdir, output)
+        os.makedirs(os.path.dirname(os.path.abspath(full)), exist_ok=True)
+        with open(full, "w", encoding="utf-8") as f:
+            f.write(result)
+        return f"✅ A型数据表格 HTML 已生成: {full} ({len(result)} bytes)"
+
+    def html_gen_cards(data_json: str, title: str = "工具导航", output: str = "cards.html") -> str:
+        """从 JSON 数据生成 C型 卡片导航 HTML（含分组筛选/搜索）
+        data_json: JSON 数组或 {items: [...], groups: [...]}
+        """
+        import json as _json
+        try:
+            raw = _json.loads(data_json)
+        except _json.JSONDecodeError as e:
+            return f"❌ data_json 解析失败: {e}"
+        items = raw if isinstance(raw, list) else (raw.get('items') or raw.get('data') or raw)
+        groups = raw.get('groups', []) if not isinstance(raw, list) else []
+        if not groups:
+            seen = []
+            for item in items:
+                g = item.get('group', '其他')
+                if g not in seen:
+                    seen.append(g)
+                    groups.append({'key': g, 'label': g})
+        tmpl, err = _html_load_template("layout-cards.html")
+        if err:
+            return err
+        result = _html_inject(tmpl, title=title,
+                              groups=_json.dumps(groups, ensure_ascii=False),
+                              items=_json.dumps(items, ensure_ascii=False),
+                              search_placeholder='搜索...')
+        full = output if output.startswith("/") else os.path.join(workdir, output)
+        os.makedirs(os.path.dirname(os.path.abspath(full)), exist_ok=True)
+        with open(full, "w", encoding="utf-8") as f:
+            f.write(result)
+        return f"✅ C型卡片导航 HTML 已生成: {full} ({len(result)} bytes)"
+
     return [
-        ToolBase("web_search",  "Search the web for information", web_search),
-        ToolBase("web_extract", "Extract content from a URL",     web_extract),
-        ToolBase("read_file",   "Read a local file",              read_file),
-        ToolBase("write_file",  "Write content to a local file",  write_file),
-        ToolBase("run_python",  "Execute Python code",            run_python),
+        ToolBase("web_search",  "搜索互联网（Tavily API）", web_search),
+        ToolBase("web_extract", "提取网页内容",             web_extract),
+        ToolBase("read_file",   "读取本地文件",              read_file),
+        ToolBase("write_file",  "写入内容到本地文件",        write_file),
+        ToolBase("run_python",  "执行 Python 代码",          run_python),
+        ToolBase("html_gen_doc",   "从 Markdown 生成 B型 文档 HTML（含 TOC/代码复制）",  html_gen_doc),
+        ToolBase("html_gen_table", "从 JSON 数据生成 A型 数据表格 HTML（含搜索/排序/分页）", html_gen_table),
+        ToolBase("html_gen_cards", "从 JSON 数据生成 C型 卡片导航 HTML（含分组筛选）",    html_gen_cards),
     ]
 
 # ──────────────────────────────────────────────
