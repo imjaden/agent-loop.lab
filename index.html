@@ -84,6 +84,7 @@
       }
       .show-practice .practice-badge {
         display: block;
+        width: 440px;
       }
       .show-practice .hint {
         display: none;
@@ -179,6 +180,8 @@
         padding: 2px 8px;
         border-radius: 4px;
         letter-spacing: 0.5px;
+        width: 45px;
+        text-align: center;
       }
       .desc {
         font-size: 12px;
@@ -424,14 +427,14 @@
       <div class="toggle-wrap">
         <span>Theory</span>
         <input type="checkbox" id="practiceToggle" />
-        <span>Practice (<a href="https://llm-radar.lab.jaden.tech" target="_blank" style="color:var(--entry);text-decoration:none;">llm-radar</a>)</span>
+        <span>Practize (<a href="https://llm-radar.lab.jaden.tech" target="_blank" style="color:var(--entry);text-decoration:none;">LLM Radar</a>)</span>
       </div>
 
       <!-- 数据流图 -->
       <div class="shutter" id="flowView">
         <div class="flow">
           <div class="fnode n-entry" onclick="showSrc('entry')">
-            <div class="title"><span class="badge">ENTRY</span><div class="practice-badge">llm-radar: <code>main()</code> in <code>llm-radar-collector.py</code> — <code>run()</code> CLI dispatch</div>🚪 main — CLI 入口</div>
+            <div class="title"><span class="badge">ENTRY</span><div class="practice-badge">llm-radar: <code>main()</code> in <code>llm-radar-collector.py</code> — <code>run()</code> CLI dispatch</div>🚪 CLI 入口</div>
             <div class="desc">参数解析 → 环境变量 → Agent 构建 → 任务输入</div>
             <div class="hint">👆 源码</div>
           </div>
@@ -508,7 +511,7 @@
           <div class="panel-header">
             <div class="panel-title">
               <span class="tag" style="background: rgba(96, 165, 250, 0.15); color: var(--entry);">ENTRY</span>
-              main — CLI 入口
+              CLI 入口
             </div>
             <span class="back" onclick="showFlow()">← 返回</span>
           </div>
