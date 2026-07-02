@@ -85,6 +85,12 @@
       .show-practice .practice-badge {
         display: block;
       }
+      .show-practice .hint {
+        display: none;
+      }
+      .show-practice .fnode {
+        cursor: default;
+      }
       .gh-link {
         display: inline-flex;
         align-items: center;
@@ -145,7 +151,7 @@
       .fnode {
         position: relative;
         width: 100%;
-        max-width: 500px;
+        max-width: 640px;
         border-radius: 12px;
         padding: 16px 20px;
         border: 1px solid transparent;
@@ -418,7 +424,7 @@
       <div class="toggle-wrap">
         <span>Theory</span>
         <input type="checkbox" id="practiceToggle" />
-        <span>Practice (llm-radar)</span>
+        <span>Practice (<a href="https://llm-radar.lab.jaden.tech" target="_blank" style="color:var(--entry);text-decoration:none;">llm-radar</a>)</span>
       </div>
 
       <!-- 数据流图 -->
@@ -441,7 +447,7 @@
             <div class="hint">👆 源码</div>
           </div>
 
-          <div style="display: flex; width: 100%; max-width: 500px; margin: 0;">
+          <div style="display: flex; width: 100%; max-width: 640px; margin: 0;">
             <div class="conn" style="flex: 1;">
               <div class="conn-line"></div>
               <div class="conn-arrow">▼</div>
