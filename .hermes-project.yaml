@@ -1,0 +1,16 @@
+project: agent-loop
+website: https://agent-loop.lab.jaden.tech
+profiles:
+- name: dev
+- name: review
+- name: ops
+sessions:
+- role: ops
+  profile: ops
+  title: agent-loop-ops
+- role: review
+  profile: review
+  title: agent-loop-review
+- role: dev
+  profile: dev
+  title: agent-loop-dev
